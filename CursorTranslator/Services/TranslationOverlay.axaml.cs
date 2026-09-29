@@ -32,6 +32,7 @@ public partial class TranslationOverlay : Window
     private PixelRect? _lastCaret;
     private readonly HashSet<string> _availableFontFamilies = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer _layoutAnimationTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
+    private readonly DispatcherTimer _layoutCorrectionTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private readonly DispatcherTimer _positionSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly Stopwatch _layoutAnimationClock = new();
     private double _animationStartHeight;
@@ -64,6 +65,7 @@ public partial class TranslationOverlay : Window
         InitializeFontFamilies();
         _appearanceControlsInitialized = true;
         _layoutAnimationTimer.Tick += LayoutAnimationTimer_Tick;
+        _layoutCorrectionTimer.Tick += LayoutCorrectionTimer_Tick;
         _positionSaveTimer.Tick += (_, _) => SaveLockedPosition();
         Opened += (_, _) => ConfigureWindowStyle();
         PositionChanged += (_, _) =>
@@ -100,6 +102,7 @@ public partial class TranslationOverlay : Window
             }
             Show();
             ConfigureWindowStyle();
+            ScheduleLayoutCorrection();
             return;
         }
 
@@ -108,6 +111,7 @@ public partial class TranslationOverlay : Window
             : GetPositionAtCaret(caret, target.WindowHeight);
         AnimateLayout(target.ViewportHeight, target.WindowHeight, targetPosition);
         ConfigureWindowStyle();
+        ScheduleLayoutCorrection();
     }
 
     private (double ViewportHeight, double WindowHeight) MeasureContentLayout()
@@ -115,22 +119,26 @@ public partial class TranslationOverlay : Window
         var previousViewportHeight = TranslationScrollViewer.Height;
         try
         {
-            // Let the real grid allocate the text column before measuring. A
-            // hand-calculated width can drift from the arranged width and produce
-            // too few or too many wrapped lines, which makes the overlay clip text
-            // or grow much taller than its content.
-            TranslationScrollViewer.Height = double.NaN;
+            // Measure the text itself with the width it actually receives. Measuring
+            // ScrollViewer.DesiredSize is unreliable here: an unbounded-height
+            // ScrollViewer may report only its minimum viewport, leaving the Window
+            // at its minimum height even while the text overflows visibly.
+            var textWidth = GetTranslationTextMeasureWidth();
             TranslationText.InvalidateMeasure();
-            TranslationScrollViewer.InvalidateMeasure();
-            CardBorder.InvalidateMeasure();
+            TranslationText.Measure(new Avalonia.Size(textWidth, double.PositiveInfinity));
+            var naturalViewportHeight = Math.Max(
+                MinTranslationViewportHeight,
+                Math.Ceiling(TranslationText.DesiredSize.Height));
 
+            // Measure the fixed card chrome separately at the minimum viewport,
+            // then use it to determine how much room remains below the Window cap.
+            TranslationScrollViewer.Height = MinTranslationViewportHeight;
+            CardBorder.InvalidateMeasure();
             var measureSize = new Avalonia.Size(Width, double.PositiveInfinity);
             CardBorder.Measure(measureSize);
-
-            var naturalViewportHeight = TranslationScrollViewer.DesiredSize.Height;
             var nonTranslationHeight = Math.Max(
                 0,
-                CardBorder.DesiredSize.Height - naturalViewportHeight);
+                CardBorder.DesiredSize.Height - TranslationScrollViewer.DesiredSize.Height);
             var heightAvailableWithinWindow = Math.Max(
                 MinTranslationViewportHeight,
                 MaxHeight - nonTranslationHeight);
@@ -153,6 +161,25 @@ public partial class TranslationOverlay : Window
         {
             TranslationScrollViewer.Height = previousViewportHeight;
         }
+    }
+
+    private double GetTranslationTextMeasureWidth()
+    {
+        // Bounds is the arranged text surface, excluding its Margin. Add the
+        // margins back because Measure receives the full allocated slot.
+        if (TranslationText.Bounds.Width > 0)
+            return TranslationText.Bounds.Width
+                + TranslationText.Margin.Left + TranslationText.Margin.Right;
+        if (TranslationScrollViewer.Bounds.Width > 0)
+            return TranslationScrollViewer.Bounds.Width;
+
+        // The window width is fixed, so this fallback is only needed on its first
+        // show, before the Grid has arranged its columns.
+        ActionButtonsPanel.Measure(new Avalonia.Size(double.PositiveInfinity, double.PositiveInfinity));
+        var horizontalChrome = CardBorder.Padding.Left + CardBorder.Padding.Right
+            + CardBorder.BorderThickness.Left + CardBorder.BorderThickness.Right
+            + ActionButtonsPanel.DesiredSize.Width;
+        return Math.Max(1, Width - horizontalChrome);
     }
 
     private PixelPoint GetPositionAtCaret(PixelRect caret, double windowHeight)
@@ -237,6 +264,30 @@ public partial class TranslationOverlay : Window
         Position = _animationTargetPosition;
     }
 
+    private void ScheduleLayoutCorrection()
+    {
+        _layoutCorrectionTimer.Stop();
+        _layoutCorrectionTimer.Start();
+    }
+
+    private void LayoutCorrectionTimer_Tick(object? sender, EventArgs e)
+    {
+        _layoutCorrectionTimer.Stop();
+        if (!IsVisible) return;
+
+        // Run a second measurement after Avalonia has had time to settle the new
+        // Run text, inline copy button, and wrapped line layout. This corrects the
+        // first-pass size if the final text metrics differ from the immediate pass.
+        TranslationText.InvalidateMeasure();
+        TranslationScrollViewer.InvalidateMeasure();
+        CardBorder.InvalidateMeasure();
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (IsVisible)
+                AnimateContentLayout(_lastCaret);
+        }, DispatcherPriority.Render);
+    }
+
     private static double Lerp(double start, double end, double progress)
         => start + ((end - start) * progress);
 
@@ -248,6 +299,7 @@ public partial class TranslationOverlay : Window
 
     public void HideOverlay()
     {
+        _layoutCorrectionTimer.Stop();
         StopLayoutAnimation();
         Hide();
     }
@@ -523,6 +575,7 @@ public partial class TranslationOverlay : Window
 
     private void CloseButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        _layoutCorrectionTimer.Stop();
         StopLayoutAnimation();
         SaveLockedPosition();
         Hide();
