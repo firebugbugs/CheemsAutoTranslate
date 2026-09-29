@@ -59,7 +59,7 @@
           PointerPressed="Card_PointerPressed" PointerReleased="Card_PointerReleased" Cursor="SizeAll">
     <StackPanel>
       <Grid ColumnDefinitions="*,Auto" MinHeight="38">
-        <ScrollViewer x:Name="TranslationScrollViewer" Grid.Column="0" Height="38" MaxHeight="280"
+        <ScrollViewer x:Name="TranslationScrollViewer" Grid.Column="0" MinHeight="38" MaxHeight="420"
                       VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <SelectableTextBlock x:Name="TranslationText" Margin="2,2,12,2" Foreground="White"
                                SelectionBrush="#607AEE" SelectionForegroundBrush="White"

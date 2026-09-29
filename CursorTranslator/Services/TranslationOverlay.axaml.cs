@@ -17,7 +17,7 @@ namespace CursorTranslator.Services;
 public partial class TranslationOverlay : Window
 {
     private const double MinTranslationViewportHeight = 38;
-    private const double MaxTranslationViewportHeight = 280;
+    private const double MaxTranslationViewportHeight = 420;
     private const double LayoutTransitionDurationMilliseconds = 120;
     private const int GwlExStyle = -20;
     private const int WsExToolWindow = 0x00000080;
@@ -112,33 +112,47 @@ public partial class TranslationOverlay : Window
 
     private (double ViewportHeight, double WindowHeight) MeasureContentLayout()
     {
-        // Bounds can briefly report a stale, narrow width during a show/layout
-        // transition. Measuring against it can wrap short text into many lines and
-        // leave the overlay at its maximum height. Derive the stable width from the
-        // fixed window/card dimensions and the controls beside the text.
-        var availableTextWidth = Width
-            - CardBorder.Padding.Left - CardBorder.Padding.Right
-            - CardBorder.BorderThickness.Left - CardBorder.BorderThickness.Right
-            - SpeakerButton.Width - SettingsButton.Width - PositionLockToggle.Width - CloseButton.Width
-            - ActionButtonsPanel.Spacing * (ActionButtonsPanel.Children.Count - 1);
-        availableTextWidth = Math.Max(1, availableTextWidth);
-        availableTextWidth = Math.Max(1, availableTextWidth - TranslationText.Margin.Left - TranslationText.Margin.Right);
-
-        TranslationText.InvalidateMeasure();
-        TranslationText.Measure(new Avalonia.Size(availableTextWidth, double.PositiveInfinity));
-        var measuredTextHeight = TranslationText.DesiredSize.Height
-            + TranslationText.Margin.Top + TranslationText.Margin.Bottom;
-        var viewportHeight = Math.Clamp(
-            measuredTextHeight,
-            MinTranslationViewportHeight,
-            MaxTranslationViewportHeight);
-
         var previousViewportHeight = TranslationScrollViewer.Height;
-        TranslationScrollViewer.Height = viewportHeight;
-        CardBorder.Measure(new Avalonia.Size(Width, double.PositiveInfinity));
-        var windowHeight = Math.Clamp(Math.Ceiling(CardBorder.DesiredSize.Height), MinHeight, MaxHeight);
-        TranslationScrollViewer.Height = previousViewportHeight;
-        return (viewportHeight, windowHeight);
+        try
+        {
+            // Let the real grid allocate the text column before measuring. A
+            // hand-calculated width can drift from the arranged width and produce
+            // too few or too many wrapped lines, which makes the overlay clip text
+            // or grow much taller than its content.
+            TranslationScrollViewer.Height = double.NaN;
+            TranslationText.InvalidateMeasure();
+            TranslationScrollViewer.InvalidateMeasure();
+            CardBorder.InvalidateMeasure();
+
+            var measureSize = new Avalonia.Size(Width, double.PositiveInfinity);
+            CardBorder.Measure(measureSize);
+
+            var naturalViewportHeight = TranslationScrollViewer.DesiredSize.Height;
+            var nonTranslationHeight = Math.Max(
+                0,
+                CardBorder.DesiredSize.Height - naturalViewportHeight);
+            var heightAvailableWithinWindow = Math.Max(
+                MinTranslationViewportHeight,
+                MaxHeight - nonTranslationHeight);
+            var viewportHeight = Math.Clamp(
+                Math.Ceiling(naturalViewportHeight),
+                MinTranslationViewportHeight,
+                Math.Min(MaxTranslationViewportHeight, heightAvailableWithinWindow));
+
+            TranslationScrollViewer.Height = viewportHeight;
+            CardBorder.InvalidateMeasure();
+            CardBorder.Measure(measureSize);
+            var windowHeight = Math.Clamp(
+                Math.Ceiling(CardBorder.DesiredSize.Height),
+                MinHeight,
+                MaxHeight);
+
+            return (viewportHeight, windowHeight);
+        }
+        finally
+        {
+            TranslationScrollViewer.Height = previousViewportHeight;
+        }
     }
 
     private PixelPoint GetPositionAtCaret(PixelRect caret, double windowHeight)
