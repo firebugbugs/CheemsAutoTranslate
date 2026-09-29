@@ -436,7 +436,7 @@ public partial class MainWindow : Window
         if (!TranslateOnTextChangeCheckBox.IsChecked.GetValueOrDefault()
             && !TranslateOnSentenceEndCheckBox.IsChecked.GetValueOrDefault()
             && !TranslateAfterInactivityCheckBox.IsChecked.GetValueOrDefault())
-            TranslateOnSentenceEndCheckBox.IsChecked = true;
+            TranslateOnTextChangeCheckBox.IsChecked = true;
 
         if (TranslateOnTextChangeCheckBox.IsChecked == true)
         {

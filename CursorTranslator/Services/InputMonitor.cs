@@ -129,6 +129,7 @@ public sealed class InputMonitor : IDisposable
             return;
         }
 
+        var suppressInitialTextChangeCommit = false;
         if (!TryReadEditable(element, nativeFocus, out var value, out var id, out var bounds, out var description))
         {
             var uiAutomationDescription = description;
@@ -149,11 +150,23 @@ public sealed class InputMonitor : IDisposable
 
                 if (!TryReadLegacyAccessible(nativeFocusHandle, out value, out id, out bounds, out description))
                 {
-                    description = !string.IsNullOrWhiteSpace(nativeDescription)
-                        ? nativeDescription
-                        : uiAutomationDescription;
-                    HandleUnreadableTarget(description);
-                    return;
+                    if (OfficeDocumentInputSource.TryReadFocusedParagraph(
+                            element, nativeFocusHandle, out value, out id, out bounds, out var officeDescription))
+                    {
+                        description = officeDescription;
+                        // A document paragraph may already contain text when focus lands.
+                        // In text-change mode, wait for an actual edit before translating it.
+                        suppressInitialTextChangeCommit = true;
+                    }
+                    else
+                    {
+                        var inputDescription = !string.IsNullOrWhiteSpace(nativeDescription)
+                            ? nativeDescription
+                            : uiAutomationDescription;
+                        description = $"{inputDescription}；{officeDescription}";
+                        HandleUnreadableTarget(description);
+                        return;
+                    }
                 }
             }
         }
@@ -177,7 +190,7 @@ public sealed class InputMonitor : IDisposable
             {
                 InputCleared?.Invoke();
             }
-            else if (triggers.OnTextChange)
+            else if (triggers.OnTextChange && !suppressInitialTextChangeCommit)
             {
                 Commit(value, bounds);
             }
@@ -346,7 +359,7 @@ public sealed class InputMonitor : IDisposable
                 }
             }
 
-            description = $"{description} 未暴露可读的 UI Automation 文本模式（微信等自绘输入框可能如此）；已检查焦点控件及其父级控件";
+            description = $"{description} 未暴露可读的 UI Automation 文本模式；已检查焦点控件及其父级控件";
             return false;
         }
         catch (ElementNotAvailableException) { description = "焦点控件刚刚关闭，请重新聚焦输入框"; return false; }
@@ -379,8 +392,16 @@ public sealed class InputMonitor : IDisposable
             {
                 var valueInfo = ((ValuePattern)valuePattern).Current;
                 if (valueInfo.IsReadOnly) return false;
-                pattern = valuePattern;
                 value = valueInfo.Value ?? "";
+
+                // Some custom UIA providers report ValuePattern on every node, including
+                // non-editable containers. An empty value from such a node is not evidence
+                // that it is an editable text target; otherwise it masks the Win32/MSAA
+                // fallbacks and leaves monitoring connected to a permanently empty value.
+                if (value.Length == 0 && info.ControlType != ControlType.Edit)
+                    return false;
+
+                pattern = valuePattern;
             }
             else if (candidate.TryGetCurrentPattern(TextPattern.Pattern, out var textPattern))
             {
@@ -390,6 +411,10 @@ public sealed class InputMonitor : IDisposable
                     return false;
                 pattern = textPattern;
                 value = ((TextPattern)textPattern).DocumentRange.GetText(-1);
+                if (string.IsNullOrEmpty(value)
+                    && info.ControlType != ControlType.Edit
+                    && info.ControlType != ControlType.Document)
+                    return false;
             }
             else
             {

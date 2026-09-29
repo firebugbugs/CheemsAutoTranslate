@@ -31,6 +31,7 @@ public sealed class UpdateService
     private string InstallerPath => Path.Combine(_updateDirectory, InstallerFileName);
     private string PartialPath => Path.Combine(_updateDirectory, PartialFileName);
     private string MetadataPath => Path.Combine(_updateDirectory, MetadataFileName);
+    private string InstallLogPath => Path.Combine(_updateDirectory, "update-install.log");
 
     public static string CurrentVersionLabel
     {
@@ -39,7 +40,7 @@ public sealed class UpdateService
             var informationalVersion = Assembly.GetEntryAssembly()?
                 .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
                 .InformationalVersion;
-            return NormalizeVersionLabel(informationalVersion) ?? "0.0.2";
+            return NormalizeVersionLabel(informationalVersion) ?? "0.0.1";
         }
     }
 
@@ -77,15 +78,24 @@ public sealed class UpdateService
         var releasePage = GetUri(GetString(root, "html_url"))
             ?? new Uri($"{ReleasesPage}/tag/{Uri.EscapeDataString(tagName)}");
         var asset = FindInstallerAsset(root);
-        if (asset is null
-            && root.TryGetProperty("id", out var releaseIdElement)
-            && releaseIdElement.TryGetInt64(out var releaseId))
+        if (root.TryGetProperty("id", out var releaseIdElement)
+            && releaseIdElement.TryGetInt64(out var releaseId)
+            && (asset is null || !asset.Size.HasValue))
         {
-            asset = await FindAttachedInstallerAsync(releaseId, cancellationToken);
+            var attachedAsset = await FindAttachedInstallerAsync(releaseId, cancellationToken);
+            if (asset is null)
+            {
+                asset = attachedAsset;
+            }
+            else if (attachedAsset is not null
+                && string.Equals(asset.Name, attachedAsset.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                asset = asset with { Size = attachedAsset.Size ?? asset.Size };
+            }
         }
         var currentVersion = TryParseVersion(CurrentVersionLabel, out var parsedCurrent)
             ? parsedCurrent
-            : new Version(0, 0, 2);
+            : new Version(0, 0, 1);
 
         return new UpdateRelease(
             tagName,
@@ -114,6 +124,12 @@ public sealed class UpdateService
         }
 
         var downloadedBytes = File.Exists(PartialPath) ? new FileInfo(PartialPath).Length : 0;
+        if (expectedSize.HasValue && downloadedBytes == expectedSize.Value && downloadedBytes > 0)
+        {
+            File.Move(PartialPath, InstallerPath, overwrite: true);
+            return new DownloadState(downloadedBytes, expectedSize, InstallerPath);
+        }
+
         return new DownloadState(downloadedBytes, expectedSize, null);
     }
 
@@ -137,16 +153,21 @@ public sealed class UpdateService
             DeleteIfExists(PartialPath);
         }
 
-        var downloadMetadata = new DownloadMetadata(
-            release.TagName,
-            release.DownloadUri.AbsoluteUri,
-            release.AssetSize);
-        await File.WriteAllTextAsync(
-            MetadataPath,
-            JsonSerializer.Serialize(downloadMetadata, JsonOptions),
-            cancellationToken);
+        await WriteDownloadMetadataAsync(release, release.AssetSize, cancellationToken);
 
         var existingBytes = File.Exists(PartialPath) ? new FileInfo(PartialPath).Length : 0;
+        if (existingBytes > 0 && release.AssetSize == existingBytes)
+        {
+            File.Move(PartialPath, InstallerPath, overwrite: true);
+            progress.Report(new DownloadProgress(existingBytes, release.AssetSize));
+            return InstallerPath;
+        }
+        if (release.AssetSize.HasValue && existingBytes > release.AssetSize.Value)
+        {
+            DeleteIfExists(PartialPath);
+            existingBytes = 0;
+        }
+
         if (File.Exists(InstallerPath))
         {
             var completedBytes = new FileInfo(InstallerPath).Length;
@@ -166,45 +187,88 @@ public sealed class UpdateService
 
         if (response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable && existingBytes > 0)
         {
+            var serverLength = response.Content.Headers.ContentRange?.Length;
+            if (serverLength.HasValue && serverLength.Value == existingBytes)
+            {
+                await WriteDownloadMetadataAsync(release, serverLength, cancellationToken);
+                File.Move(PartialPath, InstallerPath, overwrite: true);
+                progress.Report(new DownloadProgress(existingBytes, serverLength));
+                return InstallerPath;
+            }
+
+            response.Dispose();
             DeleteIfExists(PartialPath);
             return await DownloadFreshAsync(release, progress, cancellationToken);
         }
 
         response.EnsureSuccessStatusCode();
-        var append = existingBytes > 0
-            && response.StatusCode == HttpStatusCode.PartialContent
-            && response.Content.Headers.ContentRange?.From == existingBytes;
-        if (existingBytes > 0 && !append)
-            existingBytes = 0;
 
         var responseLength = response.Content.Headers.ContentRange?.Length
             ?? (response.Content.Headers.ContentLength.HasValue
-                ? response.Content.Headers.ContentLength.Value + existingBytes
+                ? response.Content.Headers.ContentLength.Value
+                    + (response.StatusCode == HttpStatusCode.PartialContent ? existingBytes : 0)
                 : null);
         var totalBytes = release.AssetSize ?? responseLength;
-        progress.Report(new DownloadProgress(existingBytes, totalBytes));
+        if (totalBytes.HasValue)
+            await WriteDownloadMetadataAsync(release, totalBytes, cancellationToken);
+
+        // Gitee's attachment CDN currently ignores Range and returns HTTP 200 with the full file.
+        // Keep the existing partial file and skip its already-downloaded prefix in that response.
+        // This preserves progress and avoids destroying resumable data, though the CDN still
+        // retransmits the prefix because it does not implement byte-range requests.
+        var replayPrefixBytes = existingBytes > 0
+            && response.StatusCode == HttpStatusCode.OK
+            ? existingBytes
+            : 0;
+        var append = existingBytes > 0
+            && response.StatusCode == HttpStatusCode.PartialContent
+            && response.Content.Headers.ContentRange?.From == existingBytes;
+        if (existingBytes > 0
+            && response.StatusCode == HttpStatusCode.PartialContent
+            && !append)
+            throw new IOException("下载服务器返回了不匹配的分段内容，已保留现有下载进度。请重试。");
+
+        var destinationOffset = append || replayPrefixBytes > 0 ? existingBytes : 0;
+        progress.Report(new DownloadProgress(destinationOffset, totalBytes, replayPrefixBytes > 0));
 
         await using (var source = await response.Content.ReadAsStreamAsync(cancellationToken))
         await using (var destination = new FileStream(
             PartialPath,
-            append ? FileMode.Append : FileMode.Create,
+            destinationOffset > 0 ? FileMode.Append : FileMode.Create,
             FileAccess.Write,
             FileShare.Read,
             64 * 1024,
             FileOptions.Asynchronous | FileOptions.SequentialScan))
         {
             var buffer = new byte[64 * 1024];
-            var downloadedBytes = existingBytes;
+            var downloadedBytes = destinationOffset;
+            var prefixBytesRemaining = replayPrefixBytes;
             while (true)
             {
                 var read = await source.ReadAsync(buffer, cancellationToken);
                 if (read == 0) break;
-                await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-                downloadedBytes += read;
-                progress.Report(new DownloadProgress(downloadedBytes, totalBytes));
+
+                var writeOffset = 0;
+                if (prefixBytesRemaining > 0)
+                {
+                    var skipped = (int)Math.Min(prefixBytesRemaining, read);
+                    prefixBytesRemaining -= skipped;
+                    writeOffset += skipped;
+                }
+
+                if (writeOffset < read)
+                {
+                    var newBytes = read - writeOffset;
+                    await destination.WriteAsync(buffer.AsMemory(writeOffset, newBytes), cancellationToken);
+                    downloadedBytes += newBytes;
+                    progress.Report(new DownloadProgress(downloadedBytes, totalBytes, replayPrefixBytes > 0));
+                }
             }
             await destination.FlushAsync(cancellationToken);
         }
+
+        if (replayPrefixBytes > 0 && new FileInfo(PartialPath).Length == existingBytes)
+            throw new IOException("下载源没有返回已下载位置之后的数据，已保留现有下载进度。请重试。");
 
         var finalLength = new FileInfo(PartialPath).Length;
         if (totalBytes.HasValue && finalLength != totalBytes.Value)
@@ -216,9 +280,10 @@ public sealed class UpdateService
         return InstallerPath;
     }
 
-    public void StartInstallerHandoff(string installerPath, int parentProcessId)
+    public void StartInstallerHandoff(string installerPath, int parentProcessId, string? fallbackExePath = null)
     {
         var targetExePath = GetInstalledExecutablePath();
+        fallbackExePath ??= Environment.ProcessPath ?? targetExePath;
         var powershellPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.System),
             "WindowsPowerShell",
@@ -230,21 +295,38 @@ public sealed class UpdateService
             function Decode([string]$value) {
               [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($value))
             }
-            try { Wait-Process -Id __PARENT_PID__ -ErrorAction SilentlyContinue } catch {}
             $installer = Decode '__INSTALLER_B64__'
             $targetExe = Decode '__TARGET_EXE_B64__'
+            $fallbackExe = Decode '__FALLBACK_EXE_B64__'
             $partial = Decode '__PARTIAL_B64__'
             $metadata = Decode '__METADATA_B64__'
-            $setup = Start-Process -FilePath $installer `
-              -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS' `
-              -WorkingDirectory (Split-Path -LiteralPath $installer -Parent) -Wait -PassThru
-            if ($setup.ExitCode -eq 0) {
+            $log = Decode '__LOG_B64__'
+            function Write-Log([string]$message) {
+              Add-Content -LiteralPath $log -Value "$(Get-Date -Format o) $message" -Encoding UTF8
+            }
+            try {
+              try { Wait-Process -Id __PARENT_PID__ -ErrorAction SilentlyContinue } catch {}
+              Write-Log 'Starting installer.'
+              if (-not (Test-Path -LiteralPath $installer)) { throw 'Installer package is missing.' }
+              $setup = Start-Process -FilePath $installer `
+                -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS' `
+                -WorkingDirectory ([System.IO.Path]::GetDirectoryName($installer)) -Wait -PassThru
+              Write-Log "Installer exit code: $($setup.ExitCode)."
+              if ($setup.ExitCode -ne 0) { throw "Installer exited with code $($setup.ExitCode)." }
+              if (-not (Test-Path -LiteralPath $targetExe)) { throw 'Updated application executable was not found.' }
+              Start-Process -FilePath $targetExe -ArgumentList '--show-settings' `
+                -WorkingDirectory ([System.IO.Path]::GetDirectoryName($targetExe))
+              Write-Log 'Updated application restarted.'
               foreach ($path in @($installer, $partial, $metadata)) {
                 Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
               }
-              if (Test-Path -LiteralPath $targetExe) {
-                Start-Process -FilePath $targetExe -ArgumentList '--show-settings' `
-                  -WorkingDirectory (Split-Path -LiteralPath $targetExe -Parent)
+              Write-Log 'Successful update package and download state removed.'
+            } catch {
+              Write-Log "Update failed: $($_.Exception.Message) $($_.InvocationInfo.PositionMessage)"
+              if (Test-Path -LiteralPath $fallbackExe) {
+                Start-Process -FilePath $fallbackExe -ArgumentList '--show-settings' `
+                  -WorkingDirectory ([System.IO.Path]::GetDirectoryName($fallbackExe))
+                Write-Log 'Previous application restarted as fallback.'
               }
             }
             """;
@@ -254,8 +336,10 @@ public sealed class UpdateService
                 .Replace("__PARENT_PID__", parentProcessId.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)
                 .Replace("__INSTALLER_B64__", EncodeUtf8(installerPath), StringComparison.Ordinal)
                 .Replace("__TARGET_EXE_B64__", EncodeUtf8(targetExePath), StringComparison.Ordinal)
+                .Replace("__FALLBACK_EXE_B64__", EncodeUtf8(fallbackExePath), StringComparison.Ordinal)
                 .Replace("__PARTIAL_B64__", EncodeUtf8(PartialPath), StringComparison.Ordinal)
-                .Replace("__METADATA_B64__", EncodeUtf8(MetadataPath), StringComparison.Ordinal)));
+                .Replace("__METADATA_B64__", EncodeUtf8(MetadataPath), StringComparison.Ordinal)
+                .Replace("__LOG_B64__", EncodeUtf8(InstallLogPath), StringComparison.Ordinal)));
 
         var startInfo = new ProcessStartInfo(powershellPath)
         {
@@ -290,6 +374,8 @@ public sealed class UpdateService
         response.EnsureSuccessStatusCode();
 
         var totalBytes = release.AssetSize ?? response.Content.Headers.ContentLength;
+        if (totalBytes.HasValue)
+            await WriteDownloadMetadataAsync(release, totalBytes, cancellationToken);
         progress.Report(new DownloadProgress(0, totalBytes));
         await using (var source = await response.Content.ReadAsStreamAsync(cancellationToken))
         await using (var destination = new FileStream(
@@ -341,6 +427,24 @@ public sealed class UpdateService
         await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var document = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken);
         return FindInstallerAsset(document.RootElement);
+    }
+
+    private async Task WriteDownloadMetadataAsync(
+        UpdateRelease release,
+        long? size,
+        CancellationToken cancellationToken)
+    {
+        if (release.DownloadUri is null)
+            return;
+
+        Directory.CreateDirectory(_updateDirectory);
+        var metadata = new DownloadMetadata(release.TagName, release.DownloadUri.AbsoluteUri, size);
+        var temporaryPath = MetadataPath + ".tmp";
+        await File.WriteAllTextAsync(
+            temporaryPath,
+            JsonSerializer.Serialize(metadata, JsonOptions),
+            cancellationToken);
+        File.Move(temporaryPath, MetadataPath, overwrite: true);
     }
 
     private static HttpClient CreateHttpClient(TimeSpan timeout)
@@ -511,7 +615,10 @@ public sealed record UpdateRelease(
     long? AssetSize,
     bool IsNewer);
 
-public sealed record DownloadProgress(long DownloadedBytes, long? TotalBytes);
+public sealed record DownloadProgress(
+    long DownloadedBytes,
+    long? TotalBytes,
+    bool IsReplayingExistingBytes = false);
 
 public sealed record DownloadState(long DownloadedBytes, long? TotalBytes, string? CompletedInstallerPath)
 {
