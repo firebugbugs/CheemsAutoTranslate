@@ -14,93 +14,99 @@ namespace CursorTranslator.Services;
 /// </summary>
 public sealed class InputMonitor : IDisposable
 {
-    private const int HotkeyId = 0x4354;
-    private const uint ModControl = 0x0002;
-    private const uint ModShift = 0x0004;
-    private const uint VkSpace = 0x20;
-    private const uint WmHotkey = 0x0312;
     private const uint GcsCompStr = 0x0008;
+    private const uint ObjIdClient = 0xFFFFFFFC;
+    private const int RoleSystemText = 0x2A;
+    private const int StateSystemUnavailable = 0x00000001;
+    private const int StateSystemFocused = 0x00000004;
+    private const int StateSystemReadOnly = 0x00000040;
+    private const int StateSystemFocusable = 0x00100000;
+    private const int StateSystemProtected = 0x20000000;
+    private const string PasswordControlDiagnostic = "检测到受保护的密码输入框，已跳过";
     private Thread? _thread;
     private volatile bool _running;
-    private volatile bool _enabled;
     private string? _elementId;
     private string _baseline = "";
-    private string _lastCommittedText = "";
+    private bool _hasPendingText;
     private DateTime _lastChangeUtc;
     private DateTime? _unreadableSinceUtc;
     private string? _lastDiagnostic;
+    private string? _lastLoopError;
     private static readonly TimeSpan UnreadableTargetGrace = TimeSpan.FromMilliseconds(600);
-    private static readonly TimeSpan PunctuationStability = TimeSpan.FromMilliseconds(250);
+    private TriggerConfiguration _triggerConfiguration = new(
+        false,
+        true,
+        false,
+        (int)(AppSettings.DefaultInactivityDelaySeconds * 1000));
+
+    public void ConfigureTranslationTriggers(
+        bool onTextChange,
+        bool onSentenceEnd,
+        bool afterInactivity,
+        int inactivityDelayMilliseconds)
+    {
+        if (onTextChange)
+        {
+            onSentenceEnd = false;
+            afterInactivity = false;
+        }
+
+        Volatile.Write(ref _triggerConfiguration, new TriggerConfiguration(
+            onTextChange,
+            onSentenceEnd,
+            afterInactivity,
+            Math.Max(1, inactivityDelayMilliseconds)));
+    }
 
     public event Action<MonitoredText>? TextCommitted;
     public event Action? InputCleared;
-    public event Action<bool>? StateChanged;
     public event Action<string>? Error;
     public event Action<string>? Diagnostic;
-    public event Action? TargetLost;
 
     public void Start()
     {
         if (_running) return;
         _running = true;
-        _enabled = true;
         _thread = new Thread(Run) { IsBackground = true, Name = "CursorTranslator UIA watcher" };
         _thread.SetApartmentState(ApartmentState.STA);
         _thread.Start();
-        StateChanged?.Invoke(true);
     }
 
     public void Stop()
     {
         _running = false;
-        _enabled = false;
         if (_thread is { IsAlive: true } thread && thread != Thread.CurrentThread)
             thread.Join(TimeSpan.FromSeconds(1));
         _thread = null;
-        StateChanged?.Invoke(false);
     }
 
     private void Run()
     {
-        var hotkeyRegistered = RegisterHotKey(IntPtr.Zero, HotkeyId, ModControl | ModShift, VkSpace);
-        if (!hotkeyRegistered)
-            Error?.Invoke("无法注册 Ctrl+Shift+Space 暂停热键，可能已被其他程序占用；仍可用窗口按钮暂停。");
-
-        try
+        while (_running)
         {
-            while (_running)
+            try
             {
-                while (PeekMessage(out var msg, IntPtr.Zero, WmHotkey, WmHotkey, 1))
-                {
-                    if (msg.WParam.ToInt32() == HotkeyId && _running)
-                    {
-                        _enabled = !_enabled;
-                        ResetTarget();
-                        StateChanged?.Invoke(_enabled);
-                    }
-                }
-
-                if (_enabled)
-                    PollFocusedElement();
-                Thread.Sleep(180);
+                PollFocusedElement();
+                _lastLoopError = null;
             }
-        }
-        catch (Exception ex)
-        {
-            Error?.Invoke($"输入监控已停止：{ex.Message}");
-            _running = false;
-            _enabled = false;
-            StateChanged?.Invoke(false);
-        }
-        finally
-        {
-            if (hotkeyRegistered) UnregisterHotKey(IntPtr.Zero, HotkeyId);
-            TargetLost?.Invoke();
+            catch (Exception ex)
+            {
+                var message = $"监控异常，正在重试：{ex.Message}";
+                if (message != _lastLoopError)
+                {
+                    _lastLoopError = message;
+                    Error?.Invoke(message);
+                }
+                ResetTarget();
+            }
+
+            Thread.Sleep(180);
         }
     }
 
     private void PollFocusedElement()
     {
+        var triggers = Volatile.Read(ref _triggerConfiguration);
         var nativeFocusHandle = GetNativeFocusHandle();
         if (HasActiveImeComposition(nativeFocusHandle))
         {
@@ -126,12 +132,29 @@ public sealed class InputMonitor : IDisposable
         if (!TryReadEditable(element, nativeFocus, out var value, out var id, out var bounds, out var description))
         {
             var uiAutomationDescription = description;
-            if (!TryReadNativeEdit(out value, out id, out bounds, out description))
+            if (uiAutomationDescription == PasswordControlDiagnostic)
             {
-                if (string.IsNullOrWhiteSpace(description))
-                    description = uiAutomationDescription;
-                HandleUnreadableTarget(description);
+                HandleUnreadableTarget(uiAutomationDescription);
                 return;
+            }
+
+            if (!TryReadNativeEdit(nativeFocusHandle, out value, out id, out bounds, out description))
+            {
+                var nativeDescription = description;
+                if (nativeDescription == PasswordControlDiagnostic)
+                {
+                    HandleUnreadableTarget(nativeDescription);
+                    return;
+                }
+
+                if (!TryReadLegacyAccessible(nativeFocusHandle, out value, out id, out bounds, out description))
+                {
+                    description = !string.IsNullOrWhiteSpace(nativeDescription)
+                        ? nativeDescription
+                        : uiAutomationDescription;
+                    HandleUnreadableTarget(description);
+                    return;
+                }
             }
         }
 
@@ -147,72 +170,112 @@ public sealed class InputMonitor : IDisposable
         {
             _elementId = id;
             _baseline = value;
-            _lastCommittedText = value;
             _lastChangeUtc = DateTime.UtcNow;
-            ReportDiagnostic($"已连接输入控件：{description}。输入内容只在本机暂存到句末或短暂停顿。");
-            TargetLost?.Invoke();
+            _hasPendingText = !string.IsNullOrWhiteSpace(value);
+            ReportDiagnostic($"已连接：{description}");
             if (string.IsNullOrWhiteSpace(value))
             {
                 InputCleared?.Invoke();
             }
-            else
+            else if (triggers.OnTextChange)
             {
-                Emit(value, bounds);
-                ReportDiagnostic($"发现已有输入内容，已提交完整内容（{value.Trim().Length} 个字符）。");
-                _lastChangeUtc = DateTime.UtcNow;
+                Commit(value, bounds);
+            }
+            else if (triggers.OnSentenceEnd && EndsWithSentenceTerminator(value))
+            {
+                Commit(value, bounds);
             }
             return;
         }
 
-        if (!_baseline.Equals(value, StringComparison.Ordinal))
+        var previousValue = _baseline;
+        var changed = !previousValue.Equals(value, StringComparison.Ordinal);
+        if (changed)
         {
             _baseline = value;
             _lastChangeUtc = DateTime.UtcNow;
-            ReportDiagnostic($"检测到输入变化（当前内容 {value.Length} 个字符），等待句末或停顿…");
+            _hasPendingText = !string.IsNullOrWhiteSpace(value);
+            ReportDiagnostic($"输入中 · {value.Length} 字");
         }
 
         if (string.IsNullOrWhiteSpace(value))
         {
-            _lastCommittedText = "";
+            _hasPendingText = false;
             InputCleared?.Invoke();
             return;
         }
 
-        if (value.Equals(_lastCommittedText, StringComparison.Ordinal)) return;
-
-        // Detect punctuation only in newly appended text. The request itself always carries
-        // the complete current field, so multi-sentence input is translated as one passage.
-        var appendedText = value.StartsWith(_lastCommittedText, StringComparison.Ordinal)
-            ? value[_lastCommittedText.Length..]
-            : "";
-
-        if (ContainsSentenceTerminator(appendedText)
-            && DateTime.UtcNow - _lastChangeUtc >= PunctuationStability)
+        if (changed && triggers.OnTextChange)
         {
-            Emit(value, bounds);
-            ReportDiagnostic($"完整输入已提交（{value.Trim().Length} 个字符）。");
-            _lastCommittedText = value;
-            _lastChangeUtc = DateTime.UtcNow;
+            Commit(value, bounds);
             return;
         }
 
-        if (value.Trim().Length >= 2 && DateTime.UtcNow - _lastChangeUtc >= TimeSpan.FromMilliseconds(850))
+        if (!_hasPendingText) return;
+
+        if (changed && triggers.OnSentenceEnd
+            && (ContainsSentenceTerminator(GetChangedSegment(previousValue, value))
+                || EndsWithSentenceTerminator(value)))
         {
-            Emit(value, bounds);
-            ReportDiagnostic($"完整输入已提交（{value.Trim().Length} 个字符）。");
-            _lastCommittedText = value;
-            _lastChangeUtc = DateTime.UtcNow;
+            Commit(value, bounds);
+            return;
         }
+
+        if (triggers.AfterInactivity
+            && (!triggers.OnSentenceEnd || !EndsWithSentenceTerminator(value))
+            && DateTime.UtcNow - _lastChangeUtc >= TimeSpan.FromMilliseconds(triggers.InactivityDelayMilliseconds))
+        {
+            Commit(value, bounds);
+        }
+    }
+
+    private void Commit(string text, PixelRect bounds)
+    {
+        Emit(text, bounds);
+        _hasPendingText = false;
+        ReportDiagnostic("已提交");
+    }
+
+    private static string GetChangedSegment(string previous, string current)
+    {
+        var prefixLength = 0;
+        var commonLength = Math.Min(previous.Length, current.Length);
+        while (prefixLength < commonLength && previous[prefixLength] == current[prefixLength])
+            prefixLength++;
+
+        var previousEnd = previous.Length;
+        var currentEnd = current.Length;
+        while (previousEnd > prefixLength && currentEnd > prefixLength
+            && previous[previousEnd - 1] == current[currentEnd - 1])
+        {
+            previousEnd--;
+            currentEnd--;
+        }
+
+        return current[prefixLength..currentEnd];
     }
 
     private static bool ContainsSentenceTerminator(string text)
     {
         for (var i = 0; i < text.Length; i++)
         {
-            if (text[i] is '\r' or '\n' or '。' or '！' or '？' or '!' or '?' or ';' or '；')
+            if (text[i] is '\r' or '\n' or '。' or '！' or '？' or '!' or '?' or ';' or '；'
+                or ',' or '，' or '、' or ':' or '：' or '…')
                 return true;
             if (text[i] == '.' && (i + 1 == text.Length || char.IsWhiteSpace(text[i + 1])))
                 return true;
+        }
+        return false;
+    }
+
+    private static bool EndsWithSentenceTerminator(string text)
+    {
+        for (var i = text.Length - 1; i >= 0; i--)
+        {
+            if (char.IsWhiteSpace(text[i])) continue;
+            return text[i] is '\r' or '\n' or '。' or '！' or '？' or '!' or '?' or ';' or '；'
+                or ',' or '，' or '、' or ':' or '：' or '…'
+                || text[i] == '.';
         }
         return false;
     }
@@ -247,7 +310,7 @@ public sealed class InputMonitor : IDisposable
             }
             if (focusedInfo.IsPassword)
             {
-                description = "检测到受保护的密码输入框，已跳过";
+            description = PasswordControlDiagnostic;
                 return false;
             }
 
@@ -381,14 +444,13 @@ public sealed class InputMonitor : IDisposable
         catch (COMException) { return null; }
     }
 
-    private static bool TryReadNativeEdit(out string value, out string id, out PixelRect bounds, out string description)
+    private static bool TryReadNativeEdit(IntPtr handle, out string value, out string id, out PixelRect bounds, out string description)
     {
         value = "";
         id = "";
         bounds = default;
         description = "";
 
-        var handle = GetNativeFocusHandle();
         if (handle == IntPtr.Zero) return false;
 
         GetWindowThreadProcessId(handle, out var processId);
@@ -419,7 +481,7 @@ public sealed class InputMonitor : IDisposable
         const uint MessageTimeoutMs = 100;
         if ((GetWindowLongPtr(handle, GwlStyle).ToInt64() & EsPassword) != 0)
         {
-            description = "检测到受保护的密码输入框，已跳过";
+            description = PasswordControlDiagnostic;
             return false;
         }
 
@@ -442,6 +504,100 @@ public sealed class InputMonitor : IDisposable
         id = $"{processId}:hwnd:{handle.ToInt64():X}";
         description = $"Win32 {classText}";
         return true;
+    }
+
+    private static bool TryReadLegacyAccessible(IntPtr handle, out string value, out string id, out PixelRect bounds, out string description)
+    {
+        value = "";
+        id = "";
+        bounds = default;
+        description = "";
+
+        if (handle == IntPtr.Zero) return false;
+
+        GetWindowThreadProcessId(handle, out var processId);
+        if (processId == Environment.ProcessId) return false;
+
+        var interfaceId = typeof(Accessibility.IAccessible).GUID;
+        if (AccessibleObjectFromWindow(handle, ObjIdClient, ref interfaceId, out var root) < 0 || root is null)
+            return false;
+
+        try
+        {
+            Accessibility.IAccessible focused = root;
+            object childId = 0;
+            for (var depth = 0; depth < 8; depth++)
+            {
+                object? focusedChild;
+                try { focusedChild = focused.accFocus; }
+                catch (COMException) { break; }
+
+                if (focusedChild is Accessibility.IAccessible focusedObject)
+                {
+                    focused = focusedObject;
+                    childId = 0;
+                    continue;
+                }
+
+                if (focusedChild is not null && focusedChild is not DBNull
+                    && TryConvertAccessibleChildId(focusedChild, out var focusedChildId))
+                    childId = focusedChildId;
+                break;
+            }
+
+            var role = Convert.ToInt32(focused.accRole[childId]);
+            var state = Convert.ToInt32(focused.accState[childId]);
+            if (role != RoleSystemText
+                || (state & (StateSystemUnavailable | StateSystemReadOnly | StateSystemProtected)) != 0
+                || (state & (StateSystemFocusable | StateSystemFocused)) == 0)
+                return false;
+
+            value = focused.accValue[childId] ?? "";
+            id = $"{processId}:msaa:{handle.ToInt64():X}:{childId}";
+
+            try
+            {
+                focused.accLocation(out var left, out var top, out var width, out var height, childId);
+                if (width > 0 && height > 0)
+                    bounds = new PixelRect(left, top, width, height);
+            }
+            catch (COMException) { }
+
+            if (bounds.Width == 0 || bounds.Height == 0)
+            {
+                var rect = new NativeRect();
+                if (GetWindowRect(handle, out rect))
+                    bounds = new PixelRect(rect.Left, rect.Top,
+                        Math.Max(1, rect.Right - rect.Left), Math.Max(1, rect.Bottom - rect.Top));
+            }
+
+            description = "MSAA editable text";
+            return true;
+        }
+        catch (COMException) { return false; }
+        catch (InvalidCastException) { return false; }
+        catch (FormatException) { return false; }
+        catch (OverflowException) { return false; }
+        catch (Exception) { return false; }
+    }
+
+    private static bool TryConvertAccessibleChildId(object value, out object childId)
+    {
+        try
+        {
+            var numericId = Convert.ToInt32(value);
+            if (numericId >= 0)
+            {
+                childId = numericId;
+                return true;
+            }
+        }
+        catch (FormatException) { }
+        catch (InvalidCastException) { }
+        catch (OverflowException) { }
+
+        childId = 0;
+        return false;
     }
 
     private static IntPtr GetNativeFocusHandle()
@@ -550,7 +706,6 @@ public sealed class InputMonitor : IDisposable
 
     private void LostTarget()
     {
-        if (_elementId is not null) TargetLost?.Invoke();
         ResetTarget();
     }
 
@@ -572,32 +727,23 @@ public sealed class InputMonitor : IDisposable
     {
         _elementId = null;
         _baseline = "";
-        _lastCommittedText = "";
+        _hasPendingText = false;
         _unreadableSinceUtc = null;
     }
 
+    private sealed record TriggerConfiguration(
+        bool OnTextChange,
+        bool OnSentenceEnd,
+        bool AfterInactivity,
+        int InactivityDelayMilliseconds);
+
     public void Dispose() => Stop();
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeMessage
-    {
-        public IntPtr HWnd;
-        public uint Message;
-        public IntPtr WParam;
-        public IntPtr LParam;
-        public uint Time;
-        public int X;
-        public int Y;
-        public uint Private;
-    }
-
-    [DllImport("user32.dll", SetLastError = true)] private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint modifiers, uint virtualKey);
-    [DllImport("user32.dll", SetLastError = true)] private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
-    [DllImport("user32.dll")] private static extern bool PeekMessage(out NativeMessage message, IntPtr hWnd, uint min, uint max, uint remove);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll", SetLastError = true)] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     [DllImport("user32.dll", SetLastError = true)] private static extern bool GetGUIThreadInfo(uint threadId, ref GuiThreadInfo info);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern int GetClassName(IntPtr hWnd, StringBuilder className, int maxCount);
+    [DllImport("oleacc.dll", PreserveSig = true)] private static extern int AccessibleObjectFromWindow(IntPtr hwnd, uint objectId, ref Guid interfaceId, [MarshalAs(UnmanagedType.Interface)] out Accessibility.IAccessible accessibleObject);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)] private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int index);
     [DllImport("user32.dll", SetLastError = true)] private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect rect);
     [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);

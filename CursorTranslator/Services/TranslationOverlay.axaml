@@ -1,8 +1,8 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="CursorTranslator.Services.TranslationOverlay"
-        Width="440" Height="100" MinWidth="220" MaxWidth="600"
-        SizeToContent="Height"
+        Width="560" Height="56" MinWidth="220" MaxWidth="600" MinHeight="56" MaxHeight="520"
+        SizeToContent="Manual"
         SystemDecorations="None" ShowInTaskbar="False" ShowActivated="False"
         Topmost="True" CanResize="False"
         Background="Transparent"
@@ -19,29 +19,52 @@
     <Style Selector="Button.svg-icon-button:pointerover">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderBrush" Value="Transparent" />
-      <Setter Property="Opacity" Value="0.72" />
+      <Setter Property="Opacity" Value="0.68" />
     </Style>
     <Style Selector="Button.svg-icon-button:pressed">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderBrush" Value="Transparent" />
-      <Setter Property="Opacity" Value="0.48" />
+      <Setter Property="Opacity" Value="0.42" />
     </Style>
   </Window.Styles>
   <Border x:Name="CardBorder" Background="#EF111827" CornerRadius="11" BorderBrush="#607AEE" BorderThickness="1" Padding="12,8"
           PointerPressed="Card_PointerPressed" PointerReleased="Card_PointerReleased" Cursor="SizeAll">
     <StackPanel>
       <Grid ColumnDefinitions="*,Auto" MinHeight="38">
-        <SelectableTextBlock x:Name="TranslationText" Margin="2,2,12,2" Foreground="White"
-                             SelectionBrush="#607AEE" SelectionForegroundBrush="White"
-                             FontSize="17" TextWrapping="Wrap" MaxHeight="220" VerticalAlignment="Center">
-          <SelectableTextBlock.ContextMenu>
-            <ContextMenu>
-              <MenuItem Header="复制" Click="CopyTranslation_Click" />
-              <MenuItem Header="问 AI" Click="AskAi_Click" />
-            </ContextMenu>
-          </SelectableTextBlock.ContextMenu>
-        </SelectableTextBlock>
-        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Spacing="2">
+        <ScrollViewer x:Name="TranslationScrollViewer" Grid.Column="0" Height="38" MaxHeight="280"
+                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <SelectableTextBlock x:Name="TranslationText" Margin="2,2,12,2" Foreground="White"
+                               SelectionBrush="#607AEE" SelectionForegroundBrush="White"
+                               FontSize="17" TextWrapping="Wrap" VerticalAlignment="Top">
+            <SelectableTextBlock.Inlines>
+              <Run x:Name="TranslationRun" />
+              <Run Text=" " />
+              <InlineUIContainer BaselineAlignment="Center">
+                <Button x:Name="CopyButton" Classes="svg-icon-button" Width="20" Height="20"
+                        VerticalAlignment="Center" Cursor="Hand" Click="CopyAllTranslation_Click"
+                        ToolTip.Tip="复制全部翻译">
+                  <Grid Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Path x:Name="CopyIcon" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
+                          Fill="{Binding #CopyButton.Foreground}"
+                          Data="M267.3 834.6h-96.5c-27.4 0-49.7-22.3-49.7-49.7V115.2c0-27.4 22.3-49.7 49.7-49.7H727c27.4 0 49.7 22.3 49.7 49.7v96.5h-42.6v-96.5c0-3.9-3.2-7.1-7.1-7.1H170.8c-3.9 0-7.1 3.2-7.1 7.1v669.7c0 3.9 3.2 7.1 7.1 7.1h96.5v42.6z M851.9 959.5H295.7c-27.4 0-49.7-22.3-49.7-49.7V240.1c0-27.4 22.3-49.7 49.7-49.7h556.2c27.4 0 49.7 22.3 49.7 49.7v669.7c-0.1 27.4-22.3 49.7-49.7 49.7zM295.7 233c-3.9 0-7.1 3.2-7.1 7.1v669.7c0 3.9 3.2 7.1 7.1 7.1h556.2c3.9 0 7.1-3.2 7.1-7.1V240.1c0-3.9-3.2-7.1-7.1-7.1H295.7z" />
+                  </Grid>
+                </Button>
+              </InlineUIContainer>
+            </SelectableTextBlock.Inlines>
+            <SelectableTextBlock.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="复制" Click="CopyTranslation_Click" />
+                <MenuItem Header="问 AI" Click="AskAi_Click" />
+              </ContextMenu>
+            </SelectableTextBlock.ContextMenu>
+          </SelectableTextBlock>
+        </ScrollViewer>
+        <StackPanel x:Name="ActionButtonsPanel" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Spacing="2">
+          <Button x:Name="SpeakerButton" Classes="svg-icon-button" Width="24" Height="24"
+                  Cursor="Hand" Click="SpeakerButton_Click" ToolTip.Tip="播放译文语音">
+            <Path x:Name="SpeakerIcon" Width="17" Height="17" Stretch="Uniform"
+                  Data="M112.7424 256.2048a51.2 51.2 0 0 0-51.3024 51.2V716.8a51.2 51.2 0 0 0 51.2 51.2h125.2352a153.6 153.6 0 0 1 79.0528 21.9136l103.6288 62.208a33.28 33.28 0 0 0 50.4832-28.5696V200.6016a33.28 33.28 0 0 0-50.3808-28.4672L317.1328 234.4448a153.6 153.6 0 0 1-79.5648 22.016l-124.8256-0.256z m124.928-50.944a102.4 102.4 0 0 0 53.0432-14.6944L394.24 128.256a84.48 84.48 0 0 1 128 72.3456v622.9504A84.48 84.48 0 0 1 394.24 896l-103.68-62.208A102.4 102.4 0 0 0 237.8752 819.2H112.64a102.4 102.4 0 0 1-102.4-102.4V307.4048a102.4 102.4 0 0 1 102.4-102.4l125.0304 0.256z m428.8 517.632a25.6 25.6 0 1 1-20.6848-46.8992 179.2 179.2 0 0 0-0.3072-328.1408 25.6 25.6 0 1 1 20.5824-46.848 230.4 230.4 0 0 1 0.4096 421.888z m82.6368 187.392a25.6 25.6 0 0 1-20.6848-46.848A384 384 0 0 0 957.44 512a384.0512 384.0512 0 0 0-229.6832-351.744 25.6 25.6 0 1 1 20.6336-46.848A435.2 435.2 0 0 1 1008.64 512a435.2 435.2 0 0 1-259.5328 398.2848z" />
+          </Button>
           <Button x:Name="SettingsButton" Classes="svg-icon-button" Width="24" Height="24"
                   Cursor="Hand" Click="SettingsButton_Click" ToolTip.Tip="卡片设置">
             <Path x:Name="SettingsIcon" Width="17" Height="17" Stretch="Uniform"
@@ -60,17 +83,35 @@
           <Grid ColumnDefinitions="76,*" ColumnSpacing="8">
             <TextBlock Text="透明度" VerticalAlignment="Center" Foreground="{Binding #TranslationText.Foreground}" />
             <Slider x:Name="OpacitySlider" Grid.Column="1" Minimum="0.25" Maximum="1"
-                    Value="0.9" VerticalAlignment="Center" ValueChanged="OpacitySlider_ValueChanged" />
+                    Value="0.8" VerticalAlignment="Center" ValueChanged="OpacitySlider_ValueChanged" />
           </Grid>
           <Grid ColumnDefinitions="76,*" ColumnSpacing="8">
             <TextBlock Text="主题" VerticalAlignment="Center" Foreground="{Binding #TranslationText.Foreground}" />
-            <ComboBox x:Name="ThemeBox" Grid.Column="1" SelectedIndex="0"
+            <ComboBox x:Name="ThemeBox" Grid.Column="1" SelectedIndex="1"
                       SelectionChanged="ThemeBox_SelectionChanged">
               <ComboBoxItem Content="深色" Tag="Dark" />
               <ComboBoxItem Content="浅色" Tag="Light" />
               <ComboBoxItem Content="蓝色" Tag="Blue" />
               <ComboBoxItem Content="绿色" Tag="Green" />
             </ComboBox>
+          </Grid>
+          <Grid ColumnDefinitions="76,*,36" ColumnSpacing="8">
+            <TextBlock Text="字号" VerticalAlignment="Center" Foreground="{Binding #TranslationText.Foreground}" />
+            <Slider x:Name="FontSizeSlider" Grid.Column="1" Minimum="10" Maximum="48" Value="17"
+                    SmallChange="1" TickFrequency="1" IsSnapToTickEnabled="True"
+                    VerticalAlignment="Center" ValueChanged="FontSizeSlider_ValueChanged" />
+            <TextBlock x:Name="FontSizeValue" Grid.Column="2" Text="17" VerticalAlignment="Center"
+                       TextAlignment="Right" Foreground="{Binding #TranslationText.Foreground}" />
+          </Grid>
+          <Grid ColumnDefinitions="76,*" ColumnSpacing="8">
+            <TextBlock Text="字体" VerticalAlignment="Center" Foreground="{Binding #TranslationText.Foreground}" />
+            <ComboBox x:Name="FontFamilyBox" Grid.Column="1"
+                      SelectionChanged="FontFamilyBox_SelectionChanged" />
+          </Grid>
+          <Grid ColumnDefinitions="76,*" ColumnSpacing="8">
+            <TextBlock Text="字重" VerticalAlignment="Center" Foreground="{Binding #TranslationText.Foreground}" />
+            <CheckBox x:Name="FontBoldCheckBox" Grid.Column="1" Content="加粗"
+                      Checked="FontBoldCheckBox_Changed" Unchecked="FontBoldCheckBox_Changed" />
           </Grid>
         </StackPanel>
       </Border>

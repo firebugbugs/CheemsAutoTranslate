@@ -1,0 +1,179 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CursorTranslator.AboutWindow"
+        Title="关于 Cheems翻译"
+        Width="520" Height="390" MinWidth="520" MinHeight="390"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False" ShowInTaskbar="False" SystemDecorations="None"
+        Background="Transparent" TransparencyLevelHint="Transparent"
+        Foreground="#302B27">
+  <Window.Styles>
+    <Style Selector="Button">
+      <Setter Property="Background" Value="#F7F1EB" />
+      <Setter Property="Foreground" Value="#684B3C" />
+      <Setter Property="BorderBrush" Value="#E7D8CA" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button:pointerover">
+      <Setter Property="Background" Value="#F0E5DA" />
+      <Setter Property="BorderBrush" Value="#D9C6B5" />
+    </Style>
+    <Style Selector="Button:pressed">
+      <Setter Property="Background" Value="#E9DACE" />
+      <Setter Property="BorderBrush" Value="#D2BBA9" />
+    </Style>
+    <Style Selector="Button.social-link">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="6,8" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="FontWeight" Value="Normal" />
+    </Style>
+    <Style Selector="Button.social-link:pointerover">
+      <Setter Property="Background" Value="#F5EEE6" />
+      <Setter Property="BorderBrush" Value="#F5EEE6" />
+    </Style>
+    <Style Selector="Button.social-link:pressed">
+      <Setter Property="Background" Value="#EEE2D6" />
+      <Setter Property="BorderBrush" Value="#EEE2D6" />
+    </Style>
+    <Style Selector="Button.window-control">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="#655A52" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Width" Value="36" />
+      <Setter Property="Height" Value="30" />
+      <Setter Property="MinWidth" Value="36" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.window-control:pointerover">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Opacity" Value="0.68" />
+    </Style>
+    <Style Selector="Button.window-control:pressed">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Opacity" Value="0.42" />
+    </Style>
+  </Window.Styles>
+
+  <Border Margin="8" CornerRadius="14" Background="#FAF8F5" BorderBrush="#DCD2C8"
+          BorderThickness="1" ClipToBounds="True" PointerPressed="Surface_PointerPressed">
+    <Grid RowDefinitions="40,*">
+      <Grid ColumnDefinitions="*,Auto" Margin="10,2,8,0">
+        <TextBlock Text="关于" FontSize="13" Foreground="#756B63" VerticalAlignment="Center" />
+        <Button Grid.Column="1" Classes="window-control" ToolTip.Tip="关闭"
+                Click="Close_Click">
+          <Path Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center"
+                VerticalAlignment="Center" Fill="#655A52"
+                Data="M259.008 797.44a32 32 0 0 1-22.656-54.592l505.856-505.856a32 32 0 0 1 45.248 45.248L281.6 788.032a31.68 31.68 0 0 1-22.592 9.408z M764.864 797.44a32.128 32.128 0 0 1-22.656-9.344L236.352 282.176a32 32 0 0 1 45.248-45.248l505.856 505.856a32 32 0 0 1-22.592 54.656z" />
+        </Button>
+      </Grid>
+
+      <StackPanel Grid.Row="1" Margin="24,12,24,20" Spacing="16">
+        <StackPanel Spacing="4">
+          <TextBlock Text="Cheems翻译" FontSize="23" FontWeight="Bold" />
+          <TextBlock Text="开发者信息" FontSize="13" Foreground="#756B63" />
+        </StackPanel>
+
+        <Border Padding="15,12" CornerRadius="11" Background="#FFFEFC"
+                BorderBrush="#EAE2D9" BorderThickness="1">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+            <Ellipse Width="42" Height="42" VerticalAlignment="Center">
+              <Ellipse.Fill>
+                <ImageBrush Source="/Assets/head_portrait.png" Stretch="UniformToFill" />
+              </Ellipse.Fill>
+            </Ellipse>
+            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="开发者名字" FontSize="12" Foreground="#756B63" />
+              <TextBlock Text="萤灬虫" FontSize="16" FontWeight="SemiBold" />
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <StackPanel Spacing="8">
+          <TextBlock Text="主页与社区" FontSize="14" FontWeight="SemiBold" />
+          <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="4">
+            <Button Classes="social-link" Tag="https://cheems.cn" ToolTip.Tip="打开个人主页"
+                    Click="OpenLink_Click">
+              <StackPanel Width="88" Spacing="7" HorizontalAlignment="Center">
+                <Ellipse Width="48" Height="48" HorizontalAlignment="Center">
+                  <Ellipse.Fill>
+                    <ImageBrush Source="/Assets/head_portrait.png" Stretch="UniformToFill" />
+                  </Ellipse.Fill>
+                </Ellipse>
+                <TextBlock Text="个人主页" FontSize="12" Foreground="#493F38"
+                           HorizontalAlignment="Center" />
+              </StackPanel>
+            </Button>
+
+            <Button Grid.Column="1" Classes="social-link" Tag="https://github.com/firebugbugs"
+                    ToolTip.Tip="打开 GitHub" Click="OpenLink_Click">
+              <StackPanel Width="88" Spacing="7" HorizontalAlignment="Center">
+                <Border Width="48" Height="48" CornerRadius="24" Background="#F7F1EB"
+                        HorizontalAlignment="Center">
+                  <Path Width="27" Height="27" Stretch="Uniform" Fill="#444444"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Data="M512 12.64c-282.752 0-512 229.216-512 512 0 226.208 146.72 418.144 350.144 485.824 25.6 4.736 35.008-11.104 35.008-24.64 0-12.192-0.48-52.544-0.704-95.328-142.464 30.976-172.512-60.416-172.512-60.416-23.296-59.168-56.832-74.912-56.832-74.912-46.464-31.776 3.52-31.136 3.52-31.136 51.392 3.616 78.464 52.768 78.464 52.768 45.664 78.272 119.776 55.648 148.992 42.56 4.576-33.088 17.856-55.68 32.512-68.48-113.728-12.928-233.28-56.864-233.28-253.024 0-55.904 20-101.568 52.768-137.44-5.312-12.896-22.848-64.96 4.96-135.488 0 0 43.008-13.76 140.832 52.48 40.832-11.36 84.64-17.024 128.16-17.248 43.488 0.192 87.328 5.888 128.256 17.248 97.728-66.24 140.64-52.48 140.64-52.48 27.872 70.528 10.336 122.592 5.024 135.488 32.832 35.84 52.704 81.536 52.704 137.44 0 196.64-119.776 239.936-233.792 252.64 18.368 15.904 34.72 47.04 34.72 94.816 0 68.512-0.608 123.648-0.608 140.512 0 13.632 9.216 29.6 35.168 24.576 203.328-67.776 349.856-259.616 349.856-485.76 0-282.784-229.248-512-512-512z" />
+                </Border>
+                <TextBlock Text="GitHub" FontSize="12" Foreground="#493F38"
+                           HorizontalAlignment="Center" />
+              </StackPanel>
+            </Button>
+
+            <Button Grid.Column="2" Classes="social-link" Tag="https://gitee.com/unbengable"
+                    ToolTip.Tip="打开 Gitee" Click="OpenLink_Click">
+              <StackPanel Width="88" Spacing="7" HorizontalAlignment="Center">
+                <Border Width="48" Height="48" CornerRadius="24" Background="#F7F1EB"
+                        HorizontalAlignment="Center">
+                  <Path Width="27" Height="27" Stretch="Uniform" Fill="#C71D23"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Data="M512 1024C229.2224 1024 0 794.7776 0 512S229.2224 0 512 0s512 229.2224 512 512-229.2224 512-512 512z m259.1488-568.8832H480.4096a25.2928 25.2928 0 0 0-25.2928 25.2928l-0.0256 63.2064c0 13.952 11.3152 25.2928 25.2672 25.2928h177.024c13.9776 0 25.2928 11.3152 25.2928 25.2672v12.6464a75.8528 75.8528 0 0 1-75.8528 75.8528H366.592a25.2928 25.2928 0 0 1-25.2672-25.2928v-240.1792a75.8528 75.8528 0 0 1 75.8272-75.8528h353.9456a25.2928 25.2928 0 0 0 25.2672-25.2928l0.0768-63.2064a25.2928 25.2928 0 0 0-25.2672-25.2928H417.152a189.6192 189.6192 0 0 0-189.6192 189.6448v353.9456c0 13.9776 11.3152 25.2928 25.2928 25.2928h372.9408a170.6496 170.6496 0 0 0 170.6496-170.6496v-145.408a25.2928 25.2928 0 0 0-25.2928-25.2672z" />
+                </Border>
+                <TextBlock Text="Gitee" FontSize="12" Foreground="#493F38"
+                           HorizontalAlignment="Center" />
+              </StackPanel>
+            </Button>
+
+            <Button Grid.Column="3" Classes="social-link"
+                    Tag="https://space.bilibili.com/43096314" ToolTip.Tip="打开 B 站主页"
+                    Click="OpenLink_Click">
+              <StackPanel Width="88" Spacing="7" HorizontalAlignment="Center">
+                <Border Width="48" Height="48" CornerRadius="24" Background="#F7F1EB"
+                        HorizontalAlignment="Center">
+                  <Viewbox Width="27" Height="27" HorizontalAlignment="Center"
+                           VerticalAlignment="Center" Stretch="Uniform">
+                    <Canvas Width="1024" Height="1024">
+                      <Path Stretch="None" Fill="#53D4F4"
+                            Data="M769.856 348.928H261.248a27.84 27.84 0 0 0-28.48 27.584v337.152a27.712 27.712 0 0 0 28.48 27.456h508.608a26.496 26.496 0 0 0 27.072-27.456V376.512a26.688 26.688 0 0 0-27.072-27.584zM295.872 473.536l143.36-27.456 10.816 53.76-141.888 27.456zM516.8 637.44c-44.032 48-90.24-15.168-90.24-15.168l23.488-15.168s31.424 56.704 66.432-18.432c33.6 72.96 70.784 19.2 70.784 19.2l21.312 13.696s-39.68 63.872-91.712 15.872z m212.672-110.144L587.2 499.84l11.2-53.824 142.976 27.456z" />
+                      <Path Stretch="None" Fill="#53D4F4"
+                            Data="M512 0a512 512 0 1 0 512 512 512 512 0 0 0-512-512z m269.632 809.408a462.4 462.4 0 0 0-47.872 0s-2.624 41.088-37.696 41.792a39.552 39.552 0 0 1-41.792-39.552c-21.44 0-279.552 1.152-279.552 1.152s-4.544 38.08-39.552 38.08a39.68 39.68 0 0 1-39.552-38.08c-22.976 0-53.888-0.768-53.888-0.768a123.52 123.52 0 0 1-87.808-117.184c1.152-100.992 0-300.8 0-300.8a117.376 117.376 0 0 1 85.504-119.808 5388.8 5388.8 0 0 1 161.984-1.536l-65.92-64s-10.176-12.8 7.168-27.136 18.432-8.512 24.512-4.352 98.304 95.104 98.304 95.104h-12.416c35.392 0 71.936 0.576 107.008 0.576 13.568-13.568 90.816-89.216 96-92.928s7.168-10.112 24.512 4.16 7.168 27.136 7.168 27.136l-64.448 62.144c88.512 0.768 156.736 1.152 156.736 1.152a120.896 120.896 0 0 1 89.6 119.424c-1.152 100.224 0.384 301.76 0.384 301.76s-4.864 97.92-88.512 113.408z" />
+                    </Canvas>
+                  </Viewbox>
+                </Border>
+                <TextBlock Text="B 站" FontSize="12" Foreground="#493F38"
+                           HorizontalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </Grid>
+        </StackPanel>
+
+        <TextBlock Text="感谢使用 Cheems翻译" FontSize="12" Foreground="#8B8077"
+                   HorizontalAlignment="Center" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

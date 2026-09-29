@@ -20,7 +20,8 @@ public partial class CardSettingsWindow : Window
             "Light" => 1,
             "Blue" => 2,
             "Green" => 3,
-            _ => 0
+            "Dark" => 0,
+            _ => 1
         };
         UpdateOpacityLabel();
     }
@@ -33,7 +34,7 @@ public partial class CardSettingsWindow : Window
 
     private void Apply_Click(object? sender, RoutedEventArgs e)
     {
-        var theme = (ThemeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Dark";
+        var theme = (ThemeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Light";
         SettingsApplied?.Invoke(new CardAppearanceSettings
         {
             Opacity = OpacitySlider.Value,

@@ -1,14 +1,18 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using Forms = System.Windows.Forms;
+using System.IO;
 
 namespace CursorTranslator;
 
 public partial class App : Avalonia.Application
 {
     private Forms.NotifyIcon? _trayIcon;
+    private System.Drawing.Icon? _trayIconImage;
+    private Stream? _trayIconStream;
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
@@ -17,13 +21,18 @@ public partial class App : Avalonia.Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.ShutdownMode = Avalonia.Controls.ShutdownMode.OnExplicitShutdown;
+            var showSettingsOnStartup = Environment.GetCommandLineArgs()
+                .Skip(1)
+                .Any(arg => string.Equals(arg, "--show-settings", StringComparison.OrdinalIgnoreCase));
 
             var mainWindow = new MainWindow
             {
-                ShowInTaskbar = false,
-                WindowState = Avalonia.Controls.WindowState.Minimized
+                ShowInTaskbar = showSettingsOnStartup,
+                WindowState = showSettingsOnStartup
+                    ? Avalonia.Controls.WindowState.Normal
+                    : Avalonia.Controls.WindowState.Minimized
             };
-            var hideOnFirstOpen = true;
+            var hideOnFirstOpen = !showSettingsOnStartup;
             mainWindow.Opened += (_, _) =>
             {
                 if (!hideOnFirstOpen) return;
@@ -33,30 +42,27 @@ public partial class App : Avalonia.Application
 
             var menu = new Forms.ContextMenuStrip();
             var openSettingsItem = new Forms.ToolStripMenuItem("打开设置");
-            var monitoringItem = new Forms.ToolStripMenuItem("暂停监听");
             var exitItem = new Forms.ToolStripMenuItem("退出");
             menu.Items.Add(openSettingsItem);
-            menu.Items.Add(monitoringItem);
             menu.Items.Add(new Forms.ToolStripSeparator());
             menu.Items.Add(exitItem);
 
+            _trayIconStream = AssetLoader.Open(new Uri("avares://CursorTranslator/Assets/translator_icon.ico"));
+            _trayIconImage = new System.Drawing.Icon(_trayIconStream);
             _trayIcon = new Forms.NotifyIcon
             {
-                Icon = System.Drawing.SystemIcons.Application,
-                Text = "光标翻译",
+                Icon = _trayIconImage,
+                Text = "Cheems翻译",
                 ContextMenuStrip = menu,
                 Visible = true
             };
             _trayIcon.DoubleClick += (_, _) => Dispatcher.UIThread.Post(mainWindow.ShowSettingsWindow);
             openSettingsItem.Click += (_, _) => Dispatcher.UIThread.Post(mainWindow.ShowSettingsWindow);
-            monitoringItem.Click += (_, _) => Dispatcher.UIThread.Post(mainWindow.ToggleMonitoring);
             exitItem.Click += (_, _) => Dispatcher.UIThread.Post(() =>
             {
                 mainWindow.CloseForExit();
                 desktop.Shutdown();
             });
-            mainWindow.MonitoringChanged += enabled => Dispatcher.UIThread.Post(() =>
-                monitoringItem.Text = enabled ? "暂停监听" : "恢复监听");
 
             desktop.MainWindow = mainWindow;
             mainWindow.StartMonitoring();
@@ -68,6 +74,10 @@ public partial class App : Avalonia.Application
                     _trayIcon.Dispose();
                     _trayIcon = null;
                 }
+                _trayIconImage?.Dispose();
+                _trayIconImage = null;
+                _trayIconStream?.Dispose();
+                _trayIconStream = null;
                 menu.Dispose();
             };
         }

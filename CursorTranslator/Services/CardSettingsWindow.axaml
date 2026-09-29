@@ -13,11 +13,11 @@
         <TextBlock x:Name="OpacityValueText" DockPanel.Dock="Right" />
       </DockPanel>
       <Slider x:Name="OpacitySlider" Minimum="0.25" Maximum="1" SmallChange="0.05" TickFrequency="0.05"
-              IsSnapToTickEnabled="False" ValueChanged="OpacitySlider_ValueChanged" />
+              IsSnapToTickEnabled="False" Value="0.8" ValueChanged="OpacitySlider_ValueChanged" />
     </StackPanel>
     <StackPanel Spacing="6">
       <TextBlock Text="颜色主题" />
-      <ComboBox x:Name="ThemeBox" SelectedIndex="0">
+      <ComboBox x:Name="ThemeBox" SelectedIndex="1">
         <ComboBoxItem Content="深色" Tag="Dark" />
         <ComboBoxItem Content="浅色" Tag="Light" />
         <ComboBoxItem Content="蓝色" Tag="Blue" />

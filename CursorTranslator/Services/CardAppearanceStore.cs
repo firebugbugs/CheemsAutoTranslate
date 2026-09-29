@@ -19,8 +19,10 @@ public sealed class CardAppearanceStore
             var settings = JsonSerializer.Deserialize<CardAppearanceSettings>(File.ReadAllText(_path))
                 ?? new CardAppearanceSettings();
             settings.Opacity = Math.Clamp(settings.Opacity, 0.25, 1.0);
+            settings.FontSize = Math.Clamp(settings.FontSize, 10, 48);
+            settings.FontFamily ??= "";
             if (settings.Theme is not ("Dark" or "Light" or "Blue" or "Green"))
-                settings.Theme = "Dark";
+                settings.Theme = "Light";
             return settings;
         }
         catch

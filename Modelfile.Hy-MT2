@@ -1,0 +1,12 @@
+# Hy-MT2 1.8B Q4_K_M, using Tencent's official dense 1.8B chat tokens.
+FROM hf.co/tencent/Hy-MT2-1.8B-GGUF:Q4_K_M
+
+TEMPLATE """{{ if .System }}<｜hy_begin▁of▁sentence｜>{{ .System }}<｜hy_place▁holder▁no▁3｜>{{ else }}<｜hy_begin▁of▁sentence｜>{{ end }}<｜hy_User｜>{{ .Prompt }}<｜hy_Assistant｜>"""
+
+PARAMETER stop <｜hy_place▁holder▁no▁2｜>
+PARAMETER stop <｜hy_place▁holder▁no▁8｜>
+PARAMETER temperature 0.7
+PARAMETER top_p 0.6
+PARAMETER top_k 20
+PARAMETER repeat_penalty 1.05
+PARAMETER num_ctx 8192
