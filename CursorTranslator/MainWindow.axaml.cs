@@ -67,6 +67,8 @@ public partial class MainWindow : Window
         _overlay.AiQuestionRequested += OnAiQuestionRequested;
         _overlay.SpeechRequested += OnSpeechRequested;
         _monitor = new InputMonitor();
+        _overlay.NativeWindowHandleAvailable += _monitor.SetOverlayWindowHandle;
+        _overlay.UserInteraction += _monitor.PreserveTargetForOverlayInteraction;
         ApplyTranslationTriggerSettings();
         _monitor.TextCommitted += OnTextCommitted;
         _monitor.InputCleared += OnInputCleared;
@@ -619,6 +621,10 @@ public partial class MainWindow : Window
 
     private void OnInputCleared() => Dispatcher.UIThread.Post(() =>
     {
+        // Do not let a translation from the previous input target re-open the
+        // overlay after focus has moved away or its text has been cleared.
+        Interlocked.Increment(ref _translationGeneration);
+        _queuedTranslation = null;
         _overlay.HideOverlay();
     });
 

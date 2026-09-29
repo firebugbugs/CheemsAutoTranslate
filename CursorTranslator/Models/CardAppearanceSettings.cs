@@ -7,4 +7,8 @@ public sealed class CardAppearanceSettings
     public double FontSize { get; set; } = 17;
     public string FontFamily { get; set; } = "";
     public bool IsBold { get; set; }
+    public bool IsPositionLocked { get; set; }
+    public bool HasLockedPosition { get; set; }
+    public int LockedPositionX { get; set; }
+    public int LockedPositionY { get; set; }
 }

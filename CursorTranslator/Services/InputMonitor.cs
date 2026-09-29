@@ -16,6 +16,8 @@ public sealed class InputMonitor : IDisposable
 {
     private const uint GcsCompStr = 0x0008;
     private const uint ObjIdClient = 0xFFFFFFFC;
+    private const uint GaRoot = 2;
+    private const uint GwOwner = 4;
     private const int RoleSystemText = 0x2A;
     private const int StateSystemUnavailable = 0x00000001;
     private const int StateSystemFocused = 0x00000004;
@@ -26,6 +28,9 @@ public sealed class InputMonitor : IDisposable
     private Thread? _thread;
     private volatile bool _running;
     private string? _elementId;
+    private IntPtr _targetRootWindow;
+    private IntPtr _overlayWindowHandle;
+    private int _overlayInteractionActive;
     private string _baseline = "";
     private bool _hasPendingText;
     private DateTime _lastChangeUtc;
@@ -63,6 +68,12 @@ public sealed class InputMonitor : IDisposable
     public event Action<string>? Error;
     public event Action<string>? Diagnostic;
 
+    public void SetOverlayWindowHandle(IntPtr handle)
+        => Interlocked.Exchange(ref _overlayWindowHandle, handle);
+
+    public void PreserveTargetForOverlayInteraction()
+        => Interlocked.Exchange(ref _overlayInteractionActive, 1);
+
     public void Start()
     {
         if (_running) return;
@@ -91,13 +102,20 @@ public sealed class InputMonitor : IDisposable
             }
             catch (Exception ex)
             {
-                var message = $"监控异常，正在重试：{ex.Message}";
-                if (message != _lastLoopError)
+                if (ShouldPreserveTargetDuringOverlayInteraction())
                 {
-                    _lastLoopError = message;
-                    Error?.Invoke(message);
+                    ReportDiagnostic("翻译框交互中，已保留当前输入目标。");
                 }
-                ResetTarget();
+                else
+                {
+                    var message = $"监控异常，正在重试：{ex.Message}";
+                    if (message != _lastLoopError)
+                    {
+                        _lastLoopError = message;
+                        Error?.Invoke(message);
+                    }
+                    LostTarget();
+                }
             }
 
             Thread.Sleep(180);
@@ -107,6 +125,23 @@ public sealed class InputMonitor : IDisposable
     private void PollFocusedElement()
     {
         var triggers = Volatile.Read(ref _triggerConfiguration);
+        var foregroundWindow = GetForegroundWindow();
+        var foregroundRoot = foregroundWindow == IntPtr.Zero
+            ? IntPtr.Zero
+            : GetAncestor(foregroundWindow, GaRoot);
+
+        // Mouse interaction can activate the non-activating overlay or one of
+        // its native popups. Keep the current source target while the user is
+        // interacting with that card; switching to any other app still clears it.
+        if (IsOverlayWindowOrOwnedPopup(foregroundWindow, foregroundRoot))
+            return;
+
+        // The overlay belongs to the input window that produced it. Clear it as
+        // soon as the user switches to another top-level window, even if that
+        // window has no readable/editable UI Automation element.
+        if (_targetRootWindow != IntPtr.Zero && foregroundRoot != _targetRootWindow)
+            LostTarget();
+
         var nativeFocusHandle = GetNativeFocusHandle();
         if (HasActiveImeComposition(nativeFocusHandle))
         {
@@ -116,8 +151,16 @@ public sealed class InputMonitor : IDisposable
 
         AutomationElement? element;
         try { element = AutomationElement.FocusedElement; }
-        catch (ElementNotAvailableException) { LostTarget(); return; }
-        catch (COMException) { LostTarget(); return; }
+        catch (ElementNotAvailableException)
+        {
+            HandleUnreadableTarget("焦点输入控件暂时不可读，正在等待其文本接口恢复。");
+            return;
+        }
+        catch (COMException)
+        {
+            HandleUnreadableTarget("焦点输入控件暂时不可读，正在等待其文本接口恢复。");
+            return;
+        }
 
         var nativeFocus = GetNativeFocusedElement(nativeFocusHandle);
         if (element is null)
@@ -129,7 +172,6 @@ public sealed class InputMonitor : IDisposable
             return;
         }
 
-        var suppressInitialTextChangeCommit = false;
         if (!TryReadEditable(element, nativeFocus, out var value, out var id, out var bounds, out var description))
         {
             var uiAutomationDescription = description;
@@ -154,9 +196,6 @@ public sealed class InputMonitor : IDisposable
                             element, nativeFocusHandle, out value, out id, out bounds, out var officeDescription))
                     {
                         description = officeDescription;
-                        // A document paragraph may already contain text when focus lands.
-                        // In text-change mode, wait for an actual edit before translating it.
-                        suppressInitialTextChangeCommit = true;
                     }
                     else
                     {
@@ -177,11 +216,13 @@ public sealed class InputMonitor : IDisposable
             return;
         }
 
+        Interlocked.Exchange(ref _overlayInteractionActive, 0);
         _unreadableSinceUtc = null;
 
         if (id != _elementId)
         {
             _elementId = id;
+            _targetRootWindow = foregroundRoot;
             _baseline = value;
             _lastChangeUtc = DateTime.UtcNow;
             _hasPendingText = !string.IsNullOrWhiteSpace(value);
@@ -190,7 +231,7 @@ public sealed class InputMonitor : IDisposable
             {
                 InputCleared?.Invoke();
             }
-            else if (triggers.OnTextChange && !suppressInitialTextChangeCommit)
+            else if (triggers.OnTextChange)
             {
                 Commit(value, bounds);
             }
@@ -240,6 +281,29 @@ public sealed class InputMonitor : IDisposable
         {
             Commit(value, bounds);
         }
+    }
+
+    private bool IsOverlayWindowOrOwnedPopup(IntPtr foregroundWindow, IntPtr foregroundRoot)
+    {
+        var overlayHandle = Interlocked.CompareExchange(ref _overlayWindowHandle, IntPtr.Zero, IntPtr.Zero);
+        if (overlayHandle == IntPtr.Zero || foregroundWindow == IntPtr.Zero)
+            return false;
+
+        var overlayRoot = GetAncestor(overlayHandle, GaRoot);
+        if (overlayRoot == IntPtr.Zero)
+            overlayRoot = overlayHandle;
+        if (foregroundRoot == overlayRoot)
+            return true;
+
+        var current = foregroundWindow;
+        for (var depth = 0; current != IntPtr.Zero && depth < 16; depth++)
+        {
+            if (current == overlayHandle || GetAncestor(current, GaRoot) == overlayRoot)
+                return true;
+            current = GetWindow(current, GwOwner);
+        }
+
+        return false;
     }
 
     private void Commit(string text, PixelRect bounds)
@@ -731,11 +795,21 @@ public sealed class InputMonitor : IDisposable
 
     private void LostTarget()
     {
+        var hadTarget = _elementId is not null;
         ResetTarget();
+        if (hadTarget)
+            InputCleared?.Invoke();
     }
 
     private void HandleUnreadableTarget(string message)
     {
+        if (ShouldPreserveTargetDuringOverlayInteraction())
+        {
+            _unreadableSinceUtc = null;
+            ReportDiagnostic("翻译框交互中，已保留当前输入目标。");
+            return;
+        }
+
         var now = DateTime.UtcNow;
         _unreadableSinceUtc ??= now;
         if (_elementId is not null && now - _unreadableSinceUtc < UnreadableTargetGrace)
@@ -748,9 +822,23 @@ public sealed class InputMonitor : IDisposable
         LostTarget();
     }
 
+    private bool ShouldPreserveTargetDuringOverlayInteraction()
+    {
+        if (Volatile.Read(ref _overlayInteractionActive) == 0 || _targetRootWindow == IntPtr.Zero)
+            return false;
+
+        var foregroundWindow = GetForegroundWindow();
+        var foregroundRoot = foregroundWindow == IntPtr.Zero
+            ? IntPtr.Zero
+            : GetAncestor(foregroundWindow, GaRoot);
+        return foregroundRoot == _targetRootWindow;
+    }
+
     private void ResetTarget()
     {
         _elementId = null;
+        _targetRootWindow = IntPtr.Zero;
+        Interlocked.Exchange(ref _overlayInteractionActive, 0);
         _baseline = "";
         _hasPendingText = false;
         _unreadableSinceUtc = null;
@@ -765,6 +853,8 @@ public sealed class InputMonitor : IDisposable
     public void Dispose() => Stop();
 
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr GetAncestor(IntPtr hWnd, uint flags);
+    [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr GetWindow(IntPtr hWnd, uint command);
     [DllImport("user32.dll", SetLastError = true)] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     [DllImport("user32.dll", SetLastError = true)] private static extern bool GetGUIThreadInfo(uint threadId, ref GuiThreadInfo info);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern int GetClassName(IntPtr hWnd, StringBuilder className, int maxCount);

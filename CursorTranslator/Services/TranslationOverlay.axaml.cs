@@ -23,13 +23,16 @@ public partial class TranslationOverlay : Window
     private const int WsExToolWindow = 0x00000080;
     private const int WsExNoActivate = 0x08000000;
     private bool _windowStyleConfigured;
-    private bool _positionPinned;
+    private bool _positionLocked;
+    private bool _hasLockedPosition;
+    private PixelPoint _lockedPosition;
     private bool _dragCandidate;
     private bool _updatingAppearanceControls;
     private bool _appearanceControlsInitialized;
     private PixelRect? _lastCaret;
     private readonly HashSet<string> _availableFontFamilies = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer _layoutAnimationTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
+    private readonly DispatcherTimer _positionSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly Stopwatch _layoutAnimationClock = new();
     private double _animationStartHeight;
     private double _animationTargetHeight;
@@ -40,6 +43,8 @@ public partial class TranslationOverlay : Window
 
     private const string SystemDefaultFontDisplayName = "系统默认";
 
+    public event Action<IntPtr>? NativeWindowHandleAvailable;
+    public event Action? UserInteraction;
     public event Action<CardAppearanceSettings>? AppearanceChanged;
     public event Action<string>? AiQuestionRequested;
     public event Action<string>? SpeechRequested;
@@ -47,14 +52,27 @@ public partial class TranslationOverlay : Window
     public TranslationOverlay()
     {
         InitializeComponent();
+        AddHandler(
+            Avalonia.Input.InputElement.PointerPressedEvent,
+            (_, e) =>
+            {
+                if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+                    UserInteraction?.Invoke();
+            },
+            Avalonia.Interactivity.RoutingStrategies.Tunnel,
+            handledEventsToo: true);
         InitializeFontFamilies();
         _appearanceControlsInitialized = true;
         _layoutAnimationTimer.Tick += LayoutAnimationTimer_Tick;
+        _positionSaveTimer.Tick += (_, _) => SaveLockedPosition();
         Opened += (_, _) => ConfigureWindowStyle();
         PositionChanged += (_, _) =>
         {
-            if (_dragCandidate)
-                _positionPinned = true;
+            if (!_dragCandidate || !_positionLocked) return;
+            _lockedPosition = Position;
+            _hasLockedPosition = true;
+            _positionSaveTimer.Stop();
+            _positionSaveTimer.Start();
         };
     }
 
@@ -68,14 +86,24 @@ public partial class TranslationOverlay : Window
             StopLayoutAnimation();
             TranslationScrollViewer.Height = target.ViewportHeight;
             Height = target.WindowHeight;
-            if (!_positionPinned)
+            if (_positionLocked && _hasLockedPosition)
+                Position = _lockedPosition;
+            else
+            {
                 Position = GetPositionAtCaret(caret, target.WindowHeight);
+                if (_positionLocked)
+                {
+                    _lockedPosition = Position;
+                    _hasLockedPosition = true;
+                    SaveLockedPosition();
+                }
+            }
             Show();
             ConfigureWindowStyle();
             return;
         }
 
-        var targetPosition = _positionPinned
+        var targetPosition = _positionLocked
             ? Position
             : GetPositionAtCaret(caret, target.WindowHeight);
         AnimateLayout(target.ViewportHeight, target.WindowHeight, targetPosition);
@@ -91,7 +119,7 @@ public partial class TranslationOverlay : Window
         var availableTextWidth = Width
             - CardBorder.Padding.Left - CardBorder.Padding.Right
             - CardBorder.BorderThickness.Left - CardBorder.BorderThickness.Right
-            - SpeakerButton.Width - SettingsButton.Width - CloseButton.Width
+            - SpeakerButton.Width - SettingsButton.Width - PositionLockToggle.Width - CloseButton.Width
             - ActionButtonsPanel.Spacing * (ActionButtonsPanel.Children.Count - 1);
         availableTextWidth = Math.Max(1, availableTextWidth);
         availableTextWidth = Math.Max(1, availableTextWidth - TranslationText.Margin.Left - TranslationText.Margin.Right);
@@ -131,7 +159,7 @@ public partial class TranslationOverlay : Window
     private void AnimateContentLayout(PixelRect? caret)
     {
         var target = MeasureContentLayout();
-        var targetPosition = !_positionPinned && caret is { } latestCaret
+        var targetPosition = !_positionLocked && caret is { } latestCaret
             ? GetPositionAtCaret(latestCaret, target.WindowHeight)
             : Position;
         if (!IsVisible)
@@ -139,7 +167,9 @@ public partial class TranslationOverlay : Window
             StopLayoutAnimation();
             TranslationScrollViewer.Height = target.ViewportHeight;
             Height = target.WindowHeight;
-            if (!_positionPinned && caret is { } hiddenCaret)
+            if (_positionLocked && _hasLockedPosition && IsVisible)
+                Position = _lockedPosition;
+            else if (!_positionLocked && caret is { } hiddenCaret)
                 Position = GetPositionAtCaret(hiddenCaret, target.WindowHeight);
             return;
         }
@@ -215,6 +245,13 @@ public partial class TranslationOverlay : Window
         {
             Opacity = Math.Clamp(settings.Opacity, 0.25, 1.0);
             OpacitySlider.Value = Opacity;
+            _positionLocked = settings.IsPositionLocked;
+            _hasLockedPosition = settings.HasLockedPosition;
+            _lockedPosition = new PixelPoint(settings.LockedPositionX, settings.LockedPositionY);
+            PositionLockToggle.IsChecked = _positionLocked;
+            UpdatePositionLockVisualState();
+            if (_positionLocked && _hasLockedPosition)
+                Position = _lockedPosition;
             ThemeBox.SelectedIndex = settings.Theme switch
             {
                 "Light" => 1,
@@ -255,6 +292,7 @@ public partial class TranslationOverlay : Window
             SpeakerIcon.Fill = iconBrush;
             CopyIcon.Fill = iconBrush;
             SettingsIcon.Fill = iconBrush;
+            PositionLockIcon.Fill = iconBrush;
             CloseIcon.Fill = iconBrush;
         }
         finally
@@ -300,7 +338,9 @@ public partial class TranslationOverlay : Window
 
     private void ConfigureWindowStyle()
     {
-        if (_windowStyleConfigured || TryGetPlatformHandle() is not { } handle) return;
+        if (TryGetPlatformHandle() is not { } handle) return;
+        NativeWindowHandleAvailable?.Invoke(handle.Handle);
+        if (_windowStyleConfigured) return;
         var current = GetWindowLongPtr(handle.Handle, GwlExStyle).ToInt64();
         SetWindowLongPtr(handle.Handle, GwlExStyle, new IntPtr((current | WsExToolWindow | WsExNoActivate) & ~0x00000020));
         _windowStyleConfigured = true;
@@ -329,7 +369,45 @@ public partial class TranslationOverlay : Window
             || source.FindAncestorOfType<SelectableTextBlock>(includeSelf: true) is not null;
 
     private void Card_PointerReleased(object? sender, PointerReleasedEventArgs e)
-        => _dragCandidate = false;
+    {
+        var wasDragging = _dragCandidate;
+        _dragCandidate = false;
+        if (wasDragging && _positionLocked)
+            SaveLockedPosition();
+    }
+
+    private void PositionLockToggle_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_updatingAppearanceControls || !_appearanceControlsInitialized) return;
+        _positionLocked = PositionLockToggle.IsChecked == true;
+        UpdatePositionLockVisualState();
+        if (_positionLocked)
+        {
+            _lockedPosition = Position;
+            _hasLockedPosition = true;
+        }
+        else
+        {
+            _positionSaveTimer.Stop();
+        }
+
+        AppearanceChanged?.Invoke(CaptureAppearanceSettings());
+        e.Handled = true;
+    }
+
+    private void UpdatePositionLockVisualState()
+    {
+        PositionLockIcon.Opacity = _positionLocked ? 1 : 0.52;
+        Avalonia.Controls.ToolTip.SetTip(PositionLockToggle, _positionLocked ? "解锁浮层位置" : "锁定浮层位置");
+    }
+
+    private void SaveLockedPosition()
+    {
+        _positionSaveTimer.Stop();
+        if (!_positionLocked || !_hasLockedPosition) return;
+        _lockedPosition = Position;
+        AppearanceChanged?.Invoke(CaptureAppearanceSettings());
+    }
 
     private void SettingsButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -365,16 +443,27 @@ public partial class TranslationOverlay : Window
         if (!_appearanceControlsInitialized || _updatingAppearanceControls) return;
         var theme = (ThemeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Light";
         var selectedFont = FontFamilyBox.SelectedItem as string;
-        var settings = new CardAppearanceSettings
+        var settings = CaptureAppearanceSettings(theme, selectedFont);
+        ApplyAppearance(settings);
+        AppearanceChanged?.Invoke(settings);
+    }
+
+    private CardAppearanceSettings CaptureAppearanceSettings(string? theme = null, string? selectedFont = null)
+    {
+        theme ??= (ThemeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Light";
+        selectedFont ??= FontFamilyBox.SelectedItem as string;
+        return new CardAppearanceSettings
         {
             Opacity = OpacitySlider.Value,
             Theme = theme,
             FontSize = FontSizeSlider.Value,
             FontFamily = selectedFont == SystemDefaultFontDisplayName ? "" : selectedFont ?? "",
-            IsBold = FontBoldCheckBox.IsChecked == true
+            IsBold = FontBoldCheckBox.IsChecked == true,
+            IsPositionLocked = _positionLocked,
+            HasLockedPosition = _hasLockedPosition,
+            LockedPositionX = _lockedPosition.X,
+            LockedPositionY = _lockedPosition.Y
         };
-        ApplyAppearance(settings);
-        AppearanceChanged?.Invoke(settings);
     }
 
     private async void CopyTranslation_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -421,7 +510,7 @@ public partial class TranslationOverlay : Window
     private void CloseButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         StopLayoutAnimation();
-        _positionPinned = false;
+        SaveLockedPosition();
         Hide();
     }
 

@@ -7,6 +7,9 @@
         Topmost="True" CanResize="False"
         Background="Transparent"
         TransparencyLevelHint="Transparent">
+  <Window.Resources>
+    <TranslateTransform x:Key="PositionLockIconOffset" X="1" Y="0" />
+  </Window.Resources>
   <Window.Styles>
     <Style Selector="Button.svg-icon-button">
       <Setter Property="Background" Value="Transparent" />
@@ -24,6 +27,31 @@
     <Style Selector="Button.svg-icon-button:pressed">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Opacity" Value="0.42" />
+    </Style>
+    <Style Selector="ToggleButton.position-lock-checkbox">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Template">
+        <ControlTemplate TargetType="ToggleButton">
+          <Border Background="{TemplateBinding Background}" CornerRadius="5">
+            <ContentPresenter Content="{TemplateBinding Content}"
+                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="ToggleButton.position-lock-checkbox:checked">
+      <Setter Property="Background" Value="#E5E5E5" />
+    </Style>
+    <Style Selector="ToggleButton.position-lock-checkbox:pointerover">
+      <Setter Property="Opacity" Value="0.72" />
+    </Style>
+    <Style Selector="ToggleButton.position-lock-checkbox:pressed">
       <Setter Property="Opacity" Value="0.42" />
     </Style>
   </Window.Styles>
@@ -70,6 +98,16 @@
             <Path x:Name="SettingsIcon" Width="17" Height="17" Stretch="Uniform"
                   Data="M624.170667 178.133333a160 160 0 0 1 138.581333 80l107.413333 186.069334a160 160 0 0 1 0 160l-107.413333 186.069333a160 160 0 0 1-138.581333 80H409.322667a160 160 0 0 1-138.581334-80l-107.434666-186.069333a160 160 0 0 1 0-160l107.434666-186.090667a160 160 0 0 1 138.581334-80z m0 64H409.322667a96 96 0 0 0-83.157334 48l-107.413333 186.069334a96 96 0 0 0 0 96l107.413333 186.069333a96 96 0 0 0 83.157334 48h214.848a96 96 0 0 0 83.136-48l107.434666-186.069333a96 96 0 0 0 0-96l-107.434666-186.090667a96 96 0 0 0-83.136-48z m-107.434667 143.402667a138.666667 138.666667 0 1 1 0 277.333333 138.666667 138.666667 0 0 1 0-277.333333z m0 64a74.666667 74.666667 0 1 0 0 149.333333 74.666667 74.666667 0 0 0 0-149.333333z" />
           </Button>
+          <ToggleButton x:Name="PositionLockToggle" Classes="position-lock-checkbox" Width="24" Height="24"
+                        Cursor="Hand" Checked="PositionLockToggle_Changed" Unchecked="PositionLockToggle_Changed"
+                        ToolTip.Tip="锁定浮层位置">
+            <Grid Width="24" Height="24" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Path x:Name="PositionLockIcon" Width="17" Height="17" Stretch="Uniform"
+                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                  RenderTransform="{StaticResource PositionLockIconOffset}"
+                  Data="M270.118128 307.243574C270.118128 173.883915 378.618553 65.361702 512 65.361702 645.35966 65.361702 753.860085 173.883915 753.860085 307.243574L753.860085 354.914043 270.118128 354.914043 270.118128 307.243574ZM827.914894 354.914043 819.221787 354.914043 819.221787 305.740255C819.221787 305.217362 819.091064 304.716255 819.069277 304.215149 817.413447 136.213787 680.371745 0 512 0 343.606468 0 206.564766 136.213787 204.908936 304.215149 204.887149 304.738043 204.756426 305.217362 204.756426 305.740255L204.756426 354.914043 196.085106 354.914043C130.004426 354.914043 76.255319 408.663149 76.255319 474.722043L76.255319 635.468255C76.255319 653.529872 90.874553 668.149106 108.93617 668.149106 126.976 668.149106 141.617021 653.529872 141.617021 635.468255L141.617021 474.722043C141.617021 444.699234 166.040511 420.253957 196.085106 420.253957L827.914894 420.253957C857.937702 420.253957 882.382979 444.699234 882.382979 474.722043L882.382979 796.693787C882.382979 904.344511 842.664851 948.267574 745.341277 948.267574L278.636936 948.267574C181.313362 948.267574 141.617021 904.344511 141.617021 796.693787 141.617021 778.653957 126.976 764.012936 108.93617 764.012936 90.874553 764.012936 76.255319 778.653957 76.255319 796.693787 76.255319 940.642043 144.340426 1013.629277 278.636936 1013.629277L745.341277 1013.629277C879.659574 1013.629277 947.744681 940.642043 947.744681 796.693787L947.744681 474.722043C947.744681 408.663149 893.973787 354.914043 827.914894 354.914043ZM511.991285 835.716902C536.828732 835.716902 557.025498 815.040817 557.025498 789.615115L557.025498 680.766094C578.159115 665.66754 591.03537 640.677583 591.03537 614.031796 591.03537 569.237243 555.565753 532.7872 511.991285 532.7872 468.416817 532.7872 432.9472 569.237243 432.9472 614.031796 432.9472 640.677583 445.845243 665.689328 467.000647 680.766094L467.000647 789.615115C467.000647 815.040817 487.175626 835.716902 511.991285 835.716902Z" />
+            </Grid>
+          </ToggleButton>
           <Button x:Name="CloseButton" Classes="svg-icon-button" Width="24" Height="24"
                   Cursor="Hand" Click="CloseButton_Click" ToolTip.Tip="关闭浮层">
             <Path x:Name="CloseIcon" Width="15" Height="15" Stretch="Uniform"
