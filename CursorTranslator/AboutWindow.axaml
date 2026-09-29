@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="CursorTranslator.AboutWindow"
         Title="关于 Cheems翻译"
-        Width="520" Height="390" MinWidth="520" MinHeight="390"
+        Width="540" Height="500" MinWidth="540" MinHeight="500"
         WindowStartupLocation="CenterOwner"
         CanResize="False" ShowInTaskbar="False" SystemDecorations="None"
         Background="Transparent" TransparencyLevelHint="Transparent"
@@ -170,6 +170,32 @@
             </Button>
           </Grid>
         </StackPanel>
+
+        <Border Padding="14,12" CornerRadius="11" Background="#FFFEFC"
+                BorderBrush="#EAE2D9" BorderThickness="1">
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+            <StackPanel Spacing="3">
+              <TextBlock Text="版本更新" FontSize="14" FontWeight="SemiBold" />
+              <TextBlock x:Name="CurrentVersionText" Text="当前版本 v0.0.2"
+                         FontSize="12" Foreground="#756B63" />
+              <TextBlock x:Name="UpdateStatusText" Text="正在检查 Gitee 发行版…"
+                         FontSize="12" Foreground="#756B63" TextWrapping="Wrap" />
+            </StackPanel>
+            <Button x:Name="UpdateActionButton" Grid.Column="1" VerticalAlignment="Center"
+                    Content="检查更新" MinWidth="104" Click="UpdateAction_Click"
+                    ToolTip.Tip="检查 Gitee 是否发布了更新版本。" />
+            <ProgressBar x:Name="UpdateProgressBar" Grid.Row="1" Grid.ColumnSpan="2"
+                         Height="8" Margin="0,10,0,0" Minimum="0" Maximum="100"
+                         IsVisible="False" Foreground="#A95032" Background="#EAE2D9" />
+            <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" Margin="0,6,0,0">
+              <TextBlock x:Name="DownloadProgressText" FontSize="11" Foreground="#756B63"
+                         VerticalAlignment="Center" />
+              <Button x:Name="PauseResumeButton" Grid.Column="1" Content="暂停"
+                      Classes="secondary" MinHeight="28" Padding="10,4"
+                      IsVisible="False" Click="PauseResume_Click" />
+            </Grid>
+          </Grid>
+        </Border>
 
         <TextBlock Text="感谢使用 Cheems翻译" FontSize="12" Foreground="#8B8077"
                    HorizontalAlignment="Center" />

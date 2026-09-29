@@ -2,6 +2,10 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
+    <Version>0.0.2</Version>
+    <AssemblyVersion>0.0.2.0</AssemblyVersion>
+    <FileVersion>0.0.2.0</FileVersion>
+    <InformationalVersion>0.0.2</InformationalVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -13,6 +17,7 @@
 
   <ItemGroup>
     <AvaloniaResource Include="Assets\translator_icon.ico" />
+    <AvaloniaResource Include="Assets\translator_icon.png" />
     <AvaloniaResource Include="Assets\head_portrait.png" />
     <PackageReference Include="Avalonia" Version="11.3.22" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />

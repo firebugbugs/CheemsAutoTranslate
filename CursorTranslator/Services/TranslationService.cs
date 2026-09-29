@@ -1,6 +1,8 @@
+using System.Globalization;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using CursorTranslator.Models;
 
@@ -29,7 +31,7 @@ public sealed class TranslationService
                 settings.MaximumTranslationCharacters,
                 AppSettings.MinimumMaximumTranslationCharacters,
                 AppSettings.MaximumMaximumTranslationCharacters);
-            text = KeepLastCharacters(text, maximumCharacters);
+            text = KeepLastTranslationUnits(text, maximumCharacters);
             if (string.IsNullOrWhiteSpace(text))
                 throw new ArgumentException("截取后的待翻译内容为空。", nameof(text));
         }
@@ -50,9 +52,12 @@ public sealed class TranslationService
         return translated.ToString();
     }
 
-    private static string KeepLastCharacters(string text, int maximumCharacters)
+    private static string KeepLastTranslationUnits(string text, int maximumUnits)
     {
-        var targetStart = GetStartIndex(text, maximumCharacters);
+        var unitStarts = GetTranslationUnitStarts(text);
+        if (unitStarts.Count <= maximumUnits) return text;
+
+        var targetStart = GetStartIndex(unitStarts, maximumUnits);
         if (targetStart == 0) return text;
         if (HasPunctuationBoundary(text, targetStart))
             return text[targetStart..].TrimStart();
@@ -60,9 +65,9 @@ public sealed class TranslationService
         // Prefer extending the suffix so a complete trailing sentence is retained.
         // If no punctuation is found within the upper range, try trimming to a
         // nearby boundary before falling back to the exact configured length.
-        for (var extraCharacters = 1; extraCharacters <= SentenceBoundarySearchRadius; extraCharacters++)
+        for (var extraUnits = 1; extraUnits <= SentenceBoundarySearchRadius; extraUnits++)
         {
-            var candidateStart = GetStartIndex(text, maximumCharacters + extraCharacters);
+            var candidateStart = GetStartIndex(unitStarts, maximumUnits + extraUnits);
             // The start of the input is a valid boundary too. If the whole short
             // input fits within the upper search range, keep it instead of falling
             // back to a later comma and dropping its opening clause.
@@ -71,11 +76,11 @@ public sealed class TranslationService
                 return text[candidateStart..].TrimStart();
         }
 
-        for (var fewerCharacters = 1; fewerCharacters <= SentenceBoundarySearchRadius; fewerCharacters++)
+        for (var fewerUnits = 1; fewerUnits <= SentenceBoundarySearchRadius; fewerUnits++)
         {
-            var candidateLength = maximumCharacters - fewerCharacters;
-            if (candidateLength <= 0) break;
-            var candidateStart = GetStartIndex(text, candidateLength);
+            var candidateUnits = maximumUnits - fewerUnits;
+            if (candidateUnits <= 0) break;
+            var candidateStart = GetStartIndex(unitStarts, candidateUnits);
             if (HasPunctuationBoundary(text, candidateStart))
                 return text[candidateStart..].TrimStart();
         }
@@ -83,17 +88,75 @@ public sealed class TranslationService
         return text[targetStart..];
     }
 
-    private static int GetStartIndex(string text, int charactersFromEnd)
+    private static List<int> GetTranslationUnitStarts(string text)
     {
-        var start = text.Length;
-        while (start > 0 && charactersFromEnd > 0)
+        var runes = text.EnumerateRunes().ToArray();
+        var starts = new List<int>(runes.Length);
+        var charIndex = 0;
+        var inWord = false;
+
+        for (var i = 0; i < runes.Length; i++)
         {
-            start--;
-            if (char.IsLowSurrogate(text[start]) && start > 0 && char.IsHighSurrogate(text[start - 1]))
-                start--;
-            charactersFromEnd--;
+            var rune = runes[i];
+
+            if (Rune.IsWhiteSpace(rune))
+            {
+                inWord = false;
+            }
+            else if (IsCjkIdeograph(rune))
+            {
+                starts.Add(charIndex);
+                inWord = false;
+            }
+            else if (Rune.IsPunctuation(rune))
+            {
+                // Keep common English contractions together as one word.
+                if (!(inWord && IsApostrophe(rune) && i + 1 < runes.Length && IsWordLetter(runes[i + 1])))
+                    inWord = false;
+            }
+            else if (Rune.IsLetterOrDigit(rune))
+            {
+                if (!inWord) starts.Add(charIndex);
+                inWord = true;
+            }
+            else if (IsCombiningMark(rune))
+            {
+                // Combining marks belong to the preceding letter and do not add a unit.
+            }
+            else
+            {
+                // Count standalone symbols (for example emoji) individually.
+                starts.Add(charIndex);
+                inWord = false;
+            }
+
+            charIndex += rune.Utf16SequenceLength;
         }
-        return start;
+
+        return starts;
+    }
+
+    private static int GetStartIndex(IReadOnlyList<int> unitStarts, int unitsFromEnd)
+        => unitsFromEnd >= unitStarts.Count ? 0 : unitStarts[unitStarts.Count - unitsFromEnd];
+
+    private static bool IsWordLetter(Rune rune)
+        => Rune.IsLetterOrDigit(rune) && !IsCjkIdeograph(rune);
+
+    private static bool IsApostrophe(Rune rune)
+        => rune.Value is '\'' or 0x2019;
+
+    private static bool IsCombiningMark(Rune rune)
+        => Rune.GetUnicodeCategory(rune) is UnicodeCategory.NonSpacingMark
+            or UnicodeCategory.SpacingCombiningMark
+            or UnicodeCategory.EnclosingMark;
+
+    private static bool IsCjkIdeograph(Rune rune)
+    {
+        var value = rune.Value;
+        return value is >= 0x3400 and <= 0x4DBF
+            or >= 0x4E00 and <= 0x9FFF
+            or >= 0xF900 and <= 0xFAFF
+            or >= 0x20000 and <= 0x323AF;
     }
 
     private static bool HasPunctuationBoundary(string text, int start)
