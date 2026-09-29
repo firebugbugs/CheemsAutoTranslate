@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Platform;
@@ -18,8 +19,10 @@ public partial class TranslationOverlay : Window
     private bool _windowStyleConfigured;
     private bool _positionPinned;
     private bool _dragCandidate;
+    private bool _updatingAppearanceControls;
+    private PixelRect? _lastCaret;
 
-    public event Action? SettingsRequested;
+    public event Action<CardAppearanceSettings>? AppearanceChanged;
     public event Action<string>? AiQuestionRequested;
 
     public TranslationOverlay()
@@ -35,6 +38,7 @@ public partial class TranslationOverlay : Window
 
     public void ShowAt(PixelRect caret, string text)
     {
+        _lastCaret = caret;
         TranslationText.Text = text;
         if (!IsVisible) Show();
         ConfigureWindowStyle();
@@ -68,7 +72,16 @@ public partial class TranslationOverlay : Window
 
     public void ApplyAppearance(CardAppearanceSettings settings)
     {
+        _updatingAppearanceControls = true;
         Opacity = Math.Clamp(settings.Opacity, 0.25, 1.0);
+        OpacitySlider.Value = Opacity;
+        ThemeBox.SelectedIndex = settings.Theme switch
+        {
+            "Light" => 1,
+            "Blue" => 2,
+            "Green" => 3,
+            _ => 0
+        };
         var (background, foreground, border) = settings.Theme switch
         {
             "Light" => ("#FFFDF7", "#172033", "#CBD5E1"),
@@ -82,6 +95,7 @@ public partial class TranslationOverlay : Window
         var iconBrush = new SolidColorBrush(Avalonia.Media.Color.Parse(foreground));
         SettingsIcon.Fill = iconBrush;
         CloseIcon.Fill = iconBrush;
+        _updatingAppearanceControls = false;
     }
 
     private void ConfigureWindowStyle()
@@ -109,9 +123,41 @@ public partial class TranslationOverlay : Window
 
     private void SettingsButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        // Open a second top-level window only after the non-activating overlay's
-        // routed click has completed; this avoids native window activation reentrancy.
-        Dispatcher.UIThread.Post(() => SettingsRequested?.Invoke(), DispatcherPriority.Background);
+        AppearancePanel.IsVisible = !AppearancePanel.IsVisible;
+        e.Handled = true;
+        if (AppearancePanel.IsVisible && !_positionPinned && _lastCaret is { } caret)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (IsVisible && !_positionPinned)
+                    PositionAtCaret(caret);
+            }, DispatcherPriority.Render);
+        }
+    }
+
+    private void OpacitySlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
+        => UpdateAppearanceFromControls();
+
+    private void ThemeBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+        => UpdateAppearanceFromControls();
+
+    private void UpdateAppearanceFromControls()
+    {
+        if (_updatingAppearanceControls) return;
+        var theme = (ThemeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Dark";
+        var settings = new CardAppearanceSettings
+        {
+            Opacity = OpacitySlider.Value,
+            Theme = theme
+        };
+        ApplyAppearance(settings);
+        AppearanceChanged?.Invoke(settings);
+        if (!_positionPinned && _lastCaret is { } caret)
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (IsVisible && !_positionPinned)
+                    PositionAtCaret(caret);
+            }, DispatcherPriority.Render);
     }
 
     private async void CopyTranslation_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

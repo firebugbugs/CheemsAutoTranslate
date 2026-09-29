@@ -15,7 +15,6 @@ public partial class MainWindow : Window
     private readonly TranslationOverlay _overlay;
     private AppSettings _settings;
     private CardAppearanceSettings _cardAppearance;
-    private CardSettingsWindow? _cardSettingsWindow;
     private AiAnswerWindow? _aiAnswerWindow;
     private CancellationTokenSource? _aiQuestionCancellation;
     private long _latestAiQuestion;
@@ -39,7 +38,7 @@ public partial class MainWindow : Window
         _cardAppearance = _cardAppearanceStore.Load();
         _overlay = new TranslationOverlay();
         _overlay.ApplyAppearance(_cardAppearance);
-        _overlay.SettingsRequested += ShowCardSettings;
+        _overlay.AppearanceChanged += OnCardAppearanceChanged;
         _overlay.AiQuestionRequested += OnAiQuestionRequested;
         _monitor = new InputMonitor();
         _monitor.TextCommitted += OnTextCommitted;
@@ -80,54 +79,15 @@ public partial class MainWindow : Window
     {
         _allowClose = true;
         StopMonitoring();
-        _cardSettingsWindow?.Close();
         _aiQuestionCancellation?.Cancel();
         _aiAnswerWindow?.Close();
         Close();
     }
 
-    private void ShowCardSettings()
+    private void OnCardAppearanceChanged(CardAppearanceSettings settings)
     {
-        if (_cardSettingsWindow is { IsVisible: true } existing)
-        {
-            existing.Topmost = true;
-            existing.Activate();
-            return;
-        }
-
-        try
-        {
-            // The translation card is always-on-top and does not activate itself.
-            // Lower it while the dedicated settings window is open so it cannot cover it.
-            _overlay.Topmost = false;
-            var settingsWindow = new CardSettingsWindow(_cardAppearance)
-            {
-                ShowActivated = true,
-                ShowInTaskbar = true,
-                Topmost = true
-            };
-            _cardSettingsWindow = settingsWindow;
-            settingsWindow.SettingsApplied += settings =>
-            {
-                _cardAppearance = settings;
-                _cardAppearanceStore.Save(settings);
-                _overlay.ApplyAppearance(settings);
-            };
-            settingsWindow.Closed += (_, _) =>
-            {
-                _overlay.Topmost = true;
-                if (ReferenceEquals(_cardSettingsWindow, settingsWindow))
-                    _cardSettingsWindow = null;
-            };
-            settingsWindow.Show();
-            settingsWindow.Activate();
-        }
-        catch (Exception ex)
-        {
-            _overlay.Topmost = true;
-            _cardSettingsWindow = null;
-            StatusText.Text = $"无法打开翻译卡片设置：{ex.Message}";
-        }
+        _cardAppearance = settings;
+        _cardAppearanceStore.Save(settings);
     }
 
     private void OnAiQuestionRequested(string text)

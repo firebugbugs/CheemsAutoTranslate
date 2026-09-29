@@ -29,29 +29,51 @@
   </Window.Styles>
   <Border x:Name="CardBorder" Background="#EF111827" CornerRadius="11" BorderBrush="#607AEE" BorderThickness="1" Padding="12,8"
           PointerPressed="Card_PointerPressed" PointerReleased="Card_PointerReleased" Cursor="SizeAll">
-    <Grid ColumnDefinitions="*,Auto" MinHeight="38">
-      <SelectableTextBlock x:Name="TranslationText" Margin="2,2,12,2" Foreground="White"
-                           SelectionBrush="#607AEE" SelectionForegroundBrush="White"
-                           FontSize="17" TextWrapping="Wrap" MaxHeight="220" VerticalAlignment="Center">
-        <SelectableTextBlock.ContextMenu>
-          <ContextMenu>
-            <MenuItem Header="复制" Click="CopyTranslation_Click" />
-            <MenuItem Header="问 AI" Click="AskAi_Click" />
-          </ContextMenu>
-        </SelectableTextBlock.ContextMenu>
-      </SelectableTextBlock>
-      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Spacing="2">
-        <Button x:Name="SettingsButton" Classes="svg-icon-button" Width="24" Height="24"
-                Cursor="Hand" Click="SettingsButton_Click" ToolTip.Tip="卡片设置">
-          <Path x:Name="SettingsIcon" Width="17" Height="17" Stretch="Uniform"
-                Data="M624.170667 178.133333a160 160 0 0 1 138.581333 80l107.413333 186.069334a160 160 0 0 1 0 160l-107.413333 186.069333a160 160 0 0 1-138.581333 80H409.322667a160 160 0 0 1-138.581334-80l-107.434666-186.069333a160 160 0 0 1 0-160l107.434666-186.090667a160 160 0 0 1 138.581334-80z m0 64H409.322667a96 96 0 0 0-83.157334 48l-107.413333 186.069334a96 96 0 0 0 0 96l107.413333 186.069333a96 96 0 0 0 83.157334 48h214.848a96 96 0 0 0 83.136-48l107.434666-186.069333a96 96 0 0 0 0-96l-107.434666-186.090667a96 96 0 0 0-83.136-48z m-107.434667 143.402667a138.666667 138.666667 0 1 1 0 277.333333 138.666667 138.666667 0 0 1 0-277.333333z m0 64a74.666667 74.666667 0 1 0 0 149.333333 74.666667 74.666667 0 0 0 0-149.333333z" />
-        </Button>
-        <Button x:Name="CloseButton" Classes="svg-icon-button" Width="24" Height="24"
-                Cursor="Hand" Click="CloseButton_Click" ToolTip.Tip="关闭浮层">
-          <Path x:Name="CloseIcon" Width="15" Height="15" Stretch="Uniform"
-                Data="M728.095 208.315l-204.907 204.907-204.907-204.907c-23.309-23.309-61.347-23.309-84.666 0l-2.452 2.452c-23.309 23.309-23.309 61.347 0 84.666l204.907 204.907-204.907 204.907c-23.309 23.309-23.309 61.347 0 84.666l2.452 2.452c23.309 23.309 61.347 23.309 84.666 0l204.907-204.907 204.907 204.907c23.309 23.309 61.347 23.309 84.666 0l2.452-2.452c23.309-23.309 23.309-61.347 0-84.666l-204.907-204.907 204.907-204.907c23.309-23.309 23.309-61.347 0-84.666l-2.452-2.452c-23.309-23.309-61.347-23.309-84.666 0z" />
-        </Button>
-      </StackPanel>
-    </Grid>
+    <StackPanel>
+      <Grid ColumnDefinitions="*,Auto" MinHeight="38">
+        <SelectableTextBlock x:Name="TranslationText" Margin="2,2,12,2" Foreground="White"
+                             SelectionBrush="#607AEE" SelectionForegroundBrush="White"
+                             FontSize="17" TextWrapping="Wrap" MaxHeight="220" VerticalAlignment="Center">
+          <SelectableTextBlock.ContextMenu>
+            <ContextMenu>
+              <MenuItem Header="复制" Click="CopyTranslation_Click" />
+              <MenuItem Header="问 AI" Click="AskAi_Click" />
+            </ContextMenu>
+          </SelectableTextBlock.ContextMenu>
+        </SelectableTextBlock>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Spacing="2">
+          <Button x:Name="SettingsButton" Classes="svg-icon-button" Width="24" Height="24"
+                  Cursor="Hand" Click="SettingsButton_Click" ToolTip.Tip="卡片设置">
+            <Path x:Name="SettingsIcon" Width="17" Height="17" Stretch="Uniform"
+                  Data="M624.170667 178.133333a160 160 0 0 1 138.581333 80l107.413333 186.069334a160 160 0 0 1 0 160l-107.413333 186.069333a160 160 0 0 1-138.581333 80H409.322667a160 160 0 0 1-138.581334-80l-107.434666-186.069333a160 160 0 0 1 0-160l107.434666-186.090667a160 160 0 0 1 138.581334-80z m0 64H409.322667a96 96 0 0 0-83.157334 48l-107.413333 186.069334a96 96 0 0 0 0 96l107.413333 186.069333a96 96 0 0 0 83.157334 48h214.848a96 96 0 0 0 83.136-48l107.434666-186.069333a96 96 0 0 0 0-96l-107.434666-186.090667a96 96 0 0 0-83.136-48z m-107.434667 143.402667a138.666667 138.666667 0 1 1 0 277.333333 138.666667 138.666667 0 0 1 0-277.333333z m0 64a74.666667 74.666667 0 1 0 0 149.333333 74.666667 74.666667 0 0 0 0-149.333333z" />
+          </Button>
+          <Button x:Name="CloseButton" Classes="svg-icon-button" Width="24" Height="24"
+                  Cursor="Hand" Click="CloseButton_Click" ToolTip.Tip="关闭浮层">
+            <Path x:Name="CloseIcon" Width="15" Height="15" Stretch="Uniform"
+                  Data="M728.095 208.315l-204.907 204.907-204.907-204.907c-23.309-23.309-61.347-23.309-84.666 0l-2.452 2.452c-23.309 23.309-23.309 61.347 0 84.666l204.907 204.907-204.907 204.907c-23.309 23.309-23.309 61.347 0 84.666l2.452 2.452c23.309 23.309 61.347 23.309 84.666 0l204.907-204.907 204.907 204.907c23.309 23.309 61.347 23.309 84.666 0l2.452-2.452c23.309-23.309 23.309-61.347 0-84.666l-204.907-204.907 204.907-204.907c23.309-23.309 23.309-61.347 0-84.666l-2.452-2.452c-23.309-23.309-61.347-23.309-84.666 0z" />
+          </Button>
+        </StackPanel>
+      </Grid>
+      <Border x:Name="AppearancePanel" IsVisible="False" Margin="0,6,0,0" Padding="4,8,2,2"
+              BorderBrush="#557F8FA4" BorderThickness="0,1,0,0">
+        <StackPanel Spacing="8">
+          <Grid ColumnDefinitions="76,*" ColumnSpacing="8">
+            <TextBlock Text="透明度" VerticalAlignment="Center" Foreground="{Binding #TranslationText.Foreground}" />
+            <Slider x:Name="OpacitySlider" Grid.Column="1" Minimum="0.25" Maximum="1"
+                    Value="0.9" VerticalAlignment="Center" ValueChanged="OpacitySlider_ValueChanged" />
+          </Grid>
+          <Grid ColumnDefinitions="76,*" ColumnSpacing="8">
+            <TextBlock Text="主题" VerticalAlignment="Center" Foreground="{Binding #TranslationText.Foreground}" />
+            <ComboBox x:Name="ThemeBox" Grid.Column="1" SelectedIndex="0"
+                      SelectionChanged="ThemeBox_SelectionChanged">
+              <ComboBoxItem Content="深色" Tag="Dark" />
+              <ComboBoxItem Content="浅色" Tag="Light" />
+              <ComboBoxItem Content="蓝色" Tag="Blue" />
+              <ComboBoxItem Content="绿色" Tag="Green" />
+            </ComboBox>
+          </Grid>
+        </StackPanel>
+      </Border>
+    </StackPanel>
   </Border>
 </Window>
