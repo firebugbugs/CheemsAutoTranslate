@@ -1,0 +1,52 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CursorTranslator.MainWindow"
+        Title="光标翻译 · Cursor Translator"
+        Width="720" Height="800" MinWidth="560" MinHeight="650"
+        WindowStartupLocation="CenterScreen">
+  <ScrollViewer>
+    <StackPanel Margin="28" Spacing="16">
+      <StackPanel Spacing="4">
+        <TextBlock Text="光标翻译" FontSize="26" FontWeight="Bold" />
+        <TextBlock Text="在 Windows 输入框旁实时显示中译英结果。监控期间不会保存输入内容。" TextWrapping="Wrap" Opacity="0.72" />
+      </StackPanel>
+
+      <Border Padding="16" CornerRadius="10" Background="#F1F5F9">
+        <StackPanel Spacing="12">
+          <TextBlock Text="模型连接" FontSize="17" FontWeight="SemiBold" />
+          <TextBlock Text="兼容 OpenAI Chat Completions 的服务地址，例如 https://api.openai.com/v1" Opacity="0.72" TextWrapping="Wrap" />
+          <TextBox x:Name="EndpointBox" Watermark="API 地址（以 /v1 结尾）" />
+          <TextBox x:Name="ModelBox" Watermark="模型名称，例如 gpt-4o-mini" />
+          <TextBox x:Name="ApiKeyBox" PasswordChar="●" Watermark="API Key（使用 Windows DPAPI 加密保存）" />
+          <TextBlock Text="系统提示词（翻译指令，可自定义目标语言和风格）" FontWeight="SemiBold" />
+          <TextBox x:Name="SystemPromptBox" AcceptsReturn="True" MinHeight="110" TextWrapping="Wrap" Watermark="例如：将用户输入的内容完整翻译成日语，只输出译文，保留原格式。" />
+          <Button x:Name="SaveButton" Content="保存连接设置" HorizontalAlignment="Left" Click="SaveSettings_Click" />
+        </StackPanel>
+      </Border>
+
+      <Border Padding="16" CornerRadius="10" Background="#F1F5F9">
+        <StackPanel Spacing="12">
+          <TextBlock Text="输入监控" FontSize="17" FontWeight="SemiBold" />
+          <TextBlock Text="通过 Windows UI Automation 读取当前焦点输入控件；不读取密码控件，也不记录输入历史。按 Ctrl+Shift+Space 暂停或恢复。" TextWrapping="Wrap" Opacity="0.72" />
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <Button x:Name="MonitorButton" Content="开始监控" Click="Monitor_Click" />
+            <TextBlock x:Name="MonitorStateText" Text="● 已暂停" VerticalAlignment="Center" />
+          </StackPanel>
+          <TextBlock x:Name="StatusText" Text="请先填写模型连接设置。" TextWrapping="Wrap" Opacity="0.72" />
+        </StackPanel>
+      </Border>
+
+      <Border Padding="16" CornerRadius="10" Background="#F1F5F9">
+        <StackPanel Spacing="10">
+          <TextBlock Text="连接测试" FontSize="17" FontWeight="SemiBold" />
+          <TextBlock Text="手动输入一段文字测试 API，不会开启全局监控。" Opacity="0.72" />
+          <TextBox x:Name="TestInputBox" AcceptsReturn="True" MinHeight="70" TextWrapping="Wrap" Watermark="输入中文" />
+          <Button x:Name="TestButton" Content="翻译测试文本" HorizontalAlignment="Left" Click="TranslateTest_Click" />
+          <TextBlock x:Name="TestResultText" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <TextBlock Text="提示：监控需要应用保持运行。某些软件不向 Windows UI Automation 暴露文本，此类输入框暂时无法自动读取。" TextWrapping="Wrap" FontSize="12" Opacity="0.65" />
+    </StackPanel>
+  </ScrollViewer>
+</Window>

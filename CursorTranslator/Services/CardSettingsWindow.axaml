@@ -1,0 +1,33 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CursorTranslator.Services.CardSettingsWindow"
+        Title="翻译卡片设置"
+        Width="360" Height="300" MinWidth="340" MinHeight="280"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False">
+  <StackPanel Margin="22" Spacing="14">
+    <TextBlock Text="翻译卡片设置" FontSize="20" FontWeight="SemiBold" />
+    <StackPanel Spacing="6">
+      <DockPanel>
+        <TextBlock Text="卡片透明度" />
+        <TextBlock x:Name="OpacityValueText" DockPanel.Dock="Right" />
+      </DockPanel>
+      <Slider x:Name="OpacitySlider" Minimum="0.25" Maximum="1" SmallChange="0.05" TickFrequency="0.05"
+              IsSnapToTickEnabled="False" ValueChanged="OpacitySlider_ValueChanged" />
+    </StackPanel>
+    <StackPanel Spacing="6">
+      <TextBlock Text="颜色主题" />
+      <ComboBox x:Name="ThemeBox" SelectedIndex="0">
+        <ComboBoxItem Content="深色" Tag="Dark" />
+        <ComboBoxItem Content="浅色" Tag="Light" />
+        <ComboBoxItem Content="蓝色" Tag="Blue" />
+        <ComboBoxItem Content="绿色" Tag="Green" />
+      </ComboBox>
+    </StackPanel>
+    <TextBlock Text="颜色主题会同时调整卡片背景、文字和边框颜色。" FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button Content="取消" Click="Cancel_Click" />
+      <Button Content="应用" Click="Apply_Click" />
+    </StackPanel>
+  </StackPanel>
+</Window>
