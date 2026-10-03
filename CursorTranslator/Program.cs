@@ -1,5 +1,6 @@
 using Avalonia;
 using CursorTranslator.Services;
+using System.Runtime.InteropServices;
 
 namespace CursorTranslator;
 
@@ -26,6 +27,10 @@ internal static class Program
         if (!isFirstInstance) return;
 
         AppLog.Info("Application", "Process started.");
+        AppLog.Info("Runtime diagnostics",
+            $"Application version={UpdateService.CurrentVersionLabel}; framework={RuntimeInformation.FrameworkDescription}; " +
+            $"OS={RuntimeInformation.OSDescription}; architecture={RuntimeInformation.ProcessArchitecture}; " +
+            $"process64Bit={Environment.Is64BitProcess}.");
         try
         {
             BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);

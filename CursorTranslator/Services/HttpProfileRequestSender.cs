@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Diagnostics;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -86,16 +87,77 @@ public static class HttpProfileRequestSender
         foreach (var header in requestProfile.Headers)
             SetHeader(request, header.Key, Expand(header.Value, requestValues));
 
-        using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        var speechRequest = serviceName.Equals("语音", StringComparison.Ordinal);
+        var endpoint = GetSafeEndpoint(uri);
+        var stopwatch = Stopwatch.StartNew();
+        if (speechRequest)
+            AppLog.Info("Speech HTTP", $"Sending profile request; method={request.Method}; endpoint={endpoint}; auth={authType}.");
+
+        HttpResponseMessage response;
+        try
         {
-            var detail = Encoding.UTF8.GetString(bytes);
-            if (detail.Length > 500) detail = detail[..500];
-            throw new HttpRequestException($"{serviceName}服务返回 {(int)response.StatusCode}: {detail}");
+            response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            if (speechRequest)
+                AppLog.Error("Speech HTTP",
+                    $"Profile request failed while sending; method={request.Method}; endpoint={endpoint}; elapsedMs={stopwatch.Elapsed.TotalMilliseconds:F0}.",
+                    exception);
+            throw;
         }
 
-        return new HttpProfileResponse(bytes, response.RequestMessage?.RequestUri ?? uri);
+        using (response)
+        {
+            if (speechRequest)
+                AppLog.Info("Speech HTTP",
+                    $"Profile request received headers; endpoint={GetSafeEndpoint(response.RequestMessage?.RequestUri ?? uri)}; " +
+                    $"status={(int)response.StatusCode}; httpVersion={response.Version}; " +
+                    $"contentType={response.Content.Headers.ContentType?.MediaType ?? "(none)"}; " +
+                    $"contentLength={response.Content.Headers.ContentLength?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}; " +
+                    $"elapsedMs={stopwatch.Elapsed.TotalMilliseconds:F0}.");
+
+            byte[] bytes;
+            try
+            {
+                bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                if (speechRequest)
+                    AppLog.Error("Speech HTTP",
+                        $"Profile response body failed while reading; endpoint={GetSafeEndpoint(response.RequestMessage?.RequestUri ?? uri)}; " +
+                        $"status={(int)response.StatusCode}; elapsedMs={stopwatch.Elapsed.TotalMilliseconds:F0}.",
+                        exception);
+                throw;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                if (speechRequest)
+                    AppLog.Warning("Speech HTTP",
+                        $"Profile endpoint returned an unsuccessful status; endpoint={GetSafeEndpoint(response.RequestMessage?.RequestUri ?? uri)}; " +
+                        $"status={(int)response.StatusCode}; responseBytes={bytes.Length}; " +
+                        $"elapsedMs={stopwatch.Elapsed.TotalMilliseconds:F0}.");
+
+                var detail = Encoding.UTF8.GetString(bytes);
+                if (detail.Length > 500) detail = detail[..500];
+                throw new HttpRequestException($"{serviceName}服务返回 {(int)response.StatusCode}: {detail}", null, response.StatusCode);
+            }
+
+            if (speechRequest)
+                AppLog.Info("Speech HTTP",
+                    $"Profile response body received; responseBytes={bytes.Length}; elapsedMs={stopwatch.Elapsed.TotalMilliseconds:F0}.");
+
+            return new HttpProfileResponse(bytes, response.RequestMessage?.RequestUri ?? uri);
+        }
+    }
+
+    public static string GetSafeEndpoint(Uri uri)
+    {
+        var host = uri.HostNameType == UriHostNameType.IPv6 ? $"[{uri.IdnHost}]" : uri.IdnHost;
+        var port = uri.IsDefaultPort ? "" : $":{uri.Port.ToString(CultureInfo.InvariantCulture)}";
+        return $"{uri.Scheme}://{host}{port}";
     }
 
     public static string Expand(string? template, IReadOnlyDictionary<string, string> values)

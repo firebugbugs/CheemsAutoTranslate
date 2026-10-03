@@ -158,12 +158,21 @@
           <Grid Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" ColumnSpacing="10">
             <Border Padding="10,7" CornerRadius="10"
                     Background="#FFFEFC" BorderBrush="#EAE2D9" BorderThickness="1">
-              <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                 <TextBlock x:Name="MonitorStateText" Text="监控中" FontSize="12" FontWeight="SemiBold"
                            Foreground="#9E4B2E" VerticalAlignment="Center" />
                 <TextBlock x:Name="StatusText" Grid.Column="1" Text="设置翻译接口" FontSize="12"
                            Foreground="#756B63" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
                            ToolTip.Tip="运行状态和错误信息。" />
+                <Button x:Name="CopyRecentLogsButton" Grid.Column="2" Classes="icon-button"
+                        Width="26" Height="24" Click="CopyRecentLogs_Click" Cursor="Hand"
+                        ToolTip.Tip="复制最近 7 天的日志（最多约 50 万字符）">
+                  <Grid Width="16" Height="18">
+                    <Path Stroke="{Binding #CopyRecentLogsButton.Foreground}" StrokeThickness="1.4"
+                          Fill="Transparent"
+                          Data="M7,5 L7,2 L15,2 L17,4 L17,13 L14,13 M4,5 L13,5 L15,7 L15,17 L4,17 Z" />
+                  </Grid>
+                </Button>
               </Grid>
             </Border>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">

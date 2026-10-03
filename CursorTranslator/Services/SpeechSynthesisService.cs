@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Media;
@@ -48,16 +49,27 @@ public sealed class SpeechSynthesisService : IDisposable
         timeout.CancelAfter(TimeSpan.FromSeconds(configuredTimeout));
         try
         {
-            if (settings.SpeechProvider == SpeechProviderKind.GenericHttp
-                && TryCreateDirectMp3Uri(settings.ActiveSpeechHttpProfile!, text, out var directMp3Uri))
+            AppLog.Info("Speech synthesis",
+                $"Starting request; provider={settings.SpeechProvider}; textCharacters={text.Length}; timeoutSeconds={configuredTimeout}.");
+
+            Uri directMp3Uri = null!;
+            var useDirectMp3 = settings.SpeechProvider == SpeechProviderKind.GenericHttp
+                && TryCreateDirectMp3Uri(settings.ActiveSpeechHttpProfile!, text, out directMp3Uri);
+            if (useDirectMp3)
             {
+                AppLog.Info("Speech synthesis", "Using direct GET/MP3 playback route.");
                 await RequestAndPlayMp3Async(directMp3Uri, generation, timeout.Token);
                 return;
             }
 
+            AppLog.Info("Speech synthesis", "Using buffered audio response route.");
             var result = settings.SpeechProvider == SpeechProviderKind.GenericHttp
                 ? await SynthesizeWithProfileAsync(settings.ActiveSpeechHttpProfile!, text, timeout.Token)
                 : await SynthesizeOpenAiCompatibleAsync(settings, text, timeout.Token);
+
+            AppLog.Info("Speech synthesis",
+                $"Audio response ready; format={result.Format}; bytes={result.Bytes.Length}; " +
+                $"sampleRate={result.SampleRate}; channels={result.Channels}; bitsPerSample={result.BitsPerSample}.");
 
             if (result.Format.Equals("Mp3", StringComparison.OrdinalIgnoreCase))
             {
@@ -100,7 +112,11 @@ public sealed class SpeechSynthesisService : IDisposable
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new TimeoutException("语音请求超过配置的超时时间，已停止本次播报。");
+            var timeoutException = new TimeoutException("语音请求超过配置的超时时间，已停止本次播报。");
+            AppLog.Error("Speech synthesis",
+                $"Speech operation timed out; provider={settings.SpeechProvider}; timeoutSeconds={configuredTimeout}.",
+                timeoutException);
+            throw timeoutException;
         }
     }
 
@@ -134,6 +150,9 @@ public sealed class SpeechSynthesisService : IDisposable
         CancellationToken cancellationToken)
     {
         ValidateProfile(profile);
+        AppLog.Info("Speech synthesis",
+            $"Using HTTP profile; workflow={profile.Workflow.Type}; method={profile.Request.Method}; " +
+            $"responseType={profile.Response.Type}; format={profile.Response.Format}.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(profile.Request.TimeoutSeconds, 1, 600)));
 
@@ -200,11 +219,19 @@ public sealed class SpeechSynthesisService : IDisposable
         var format = response.Format.Trim();
         byte[] audio;
         var type = response.Type.Trim();
+        AppLog.Info("Speech synthesis",
+            $"Parsing response; responseType={type}; format={format}; responseBytes={responseBytes.Length}.");
         if (type.Equals("RawAudio", StringComparison.OrdinalIgnoreCase))
         {
-            audio = LooksLikeHtmlAudioPage(responseBytes)
-                ? await DownloadHtmlAudioSourceAsync(responseBytes, responseUri, cancellationToken)
-                : responseBytes;
+            if (LooksLikeHtmlAudioPage(responseBytes))
+            {
+                AppLog.Info("Speech synthesis", "Raw audio response is an HTML audio page; resolving its source URL.");
+                audio = await DownloadHtmlAudioSourceAsync(responseBytes, responseUri, cancellationToken);
+            }
+            else
+            {
+                audio = responseBytes;
+            }
         }
         else
         {
@@ -260,6 +287,8 @@ public sealed class SpeechSynthesisService : IDisposable
         CancellationToken cancellationToken)
     {
         var audioUri = GetHtmlAudioSourceUri(htmlBytes, responseUri);
+        AppLog.Info("Speech synthesis",
+            $"Resolved audio source; endpoint={HttpProfileRequestSender.GetSafeEndpoint(audioUri)}.");
         return await DownloadAudioAsync(audioUri.AbsoluteUri, cancellationToken);
     }
 
@@ -285,10 +314,73 @@ public sealed class SpeechSynthesisService : IDisposable
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
             || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
             throw new InvalidOperationException("音频 URL 必须是有效的 HTTP 或 HTTPS 地址。");
-        using var response = await Client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-        EnsureSuccess(response, bytes);
-        return bytes;
+        return (await GetSpeechHttpResponseAsync(uri, cancellationToken, "Generated audio download")).Bytes;
+    }
+
+    private static async Task<ProfileResponseData> GetSpeechHttpResponseAsync(
+        Uri uri,
+        CancellationToken cancellationToken,
+        string operation)
+    {
+        var endpoint = HttpProfileRequestSender.GetSafeEndpoint(uri);
+        var stopwatch = Stopwatch.StartNew();
+        AppLog.Info("Speech HTTP", $"Starting {operation}; method=GET; endpoint={endpoint}.");
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await Client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            AppLog.Error("Speech HTTP",
+                $"{operation} failed while sending; endpoint={endpoint}; elapsedMs={stopwatch.Elapsed.TotalMilliseconds:F0}.",
+                exception);
+            throw;
+        }
+
+        using (response)
+        {
+            var effectiveUri = response.RequestMessage?.RequestUri ?? uri;
+            var effectiveEndpoint = HttpProfileRequestSender.GetSafeEndpoint(effectiveUri);
+            AppLog.Info("Speech HTTP",
+                $"{operation} response headers received; endpoint={effectiveEndpoint}; status={(int)response.StatusCode}; " +
+                $"httpVersion={response.Version}; contentType={response.Content.Headers.ContentType?.MediaType ?? "(none)"}; " +
+                $"contentLength={response.Content.Headers.ContentLength?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}; " +
+                $"elapsedMs={stopwatch.Elapsed.TotalMilliseconds:F0}.");
+
+            byte[] bytes;
+            try
+            {
+                bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                AppLog.Error("Speech HTTP",
+                    $"{operation} failed while reading the response body; endpoint={effectiveEndpoint}; " +
+                    $"status={(int)response.StatusCode}; elapsedMs={stopwatch.Elapsed.TotalMilliseconds:F0}.",
+                    exception);
+                throw;
+            }
+
+            try
+            {
+                EnsureSuccess(response, bytes);
+            }
+            catch (HttpRequestException exception)
+            {
+                AppLog.Warning("Speech HTTP",
+                    $"{operation} returned an unsuccessful HTTP status; endpoint={effectiveEndpoint}; " +
+                    $"status={(int)response.StatusCode}; responseBytes={bytes.Length}; " +
+                    $"elapsedMs={stopwatch.Elapsed.TotalMilliseconds:F0}.", exception);
+                throw;
+            }
+
+            AppLog.Info("Speech HTTP",
+                $"{operation} completed; endpoint={effectiveEndpoint}; responseBytes={bytes.Length}; " +
+                $"elapsedMs={stopwatch.Elapsed.TotalMilliseconds:F0}.");
+            return new ProfileResponseData(bytes, effectiveUri);
+        }
     }
 
     private static async Task<byte[]> DecodeBase64OrUrlAsync(string value, CancellationToken cancellationToken)
@@ -313,6 +405,7 @@ public sealed class SpeechSynthesisService : IDisposable
 
     private async Task PlayMp3Async(byte[] audio, long generation, CancellationToken cancellationToken)
     {
+        AppLog.Info("Speech playback", $"Preparing local MP3 playback; audioBytes={audio.Length}.");
         var path = Path.Combine(Path.GetTempPath(), $"cheems-tts-{Guid.NewGuid():N}.mp3");
         await File.WriteAllBytesAsync(path, audio, cancellationToken);
         var player = new System.Windows.Media.MediaPlayer();
@@ -321,13 +414,12 @@ public sealed class SpeechSynthesisService : IDisposable
 
     private async Task RequestAndPlayMp3Async(Uri requestUri, long generation, CancellationToken cancellationToken)
     {
-        using var response = await Client.GetAsync(requestUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        var responseBytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-        EnsureSuccess(response, responseBytes);
+        var response = await GetSpeechHttpResponseAsync(requestUri, cancellationToken, "Speech synthesis endpoint request");
+        var responseBytes = response.Bytes;
         if (responseBytes.Length == 0)
             throw new InvalidOperationException("语音服务返回了空音频。");
 
-        var effectiveUri = response.RequestMessage?.RequestUri ?? requestUri;
+        var effectiveUri = response.EffectiveUri;
         if (LooksLikeHtmlAudioPage(responseBytes))
         {
             var audioUri = GetHtmlAudioSourceUri(responseBytes, effectiveUri);
@@ -342,6 +434,8 @@ public sealed class SpeechSynthesisService : IDisposable
 
     private async Task PlayMp3UriAsync(Uri audioUri, long generation, CancellationToken cancellationToken)
     {
+        AppLog.Info("Speech playback",
+            $"Opening generated MP3 stream with Media Foundation; endpoint={HttpProfileRequestSender.GetSafeEndpoint(audioUri)}.");
         var readerTask = Task.Run(() => new MediaFoundationReader(audioUri.AbsoluteUri));
         MediaFoundationReader? reader = null;
         WasapiPlayer? player = null;
@@ -351,17 +445,20 @@ public sealed class SpeechSynthesisService : IDisposable
             {
                 reader = await readerTask.WaitAsync(cancellationToken);
             }
+            catch (Exception streamException) when (!cancellationToken.IsCancellationRequested)
+            {
+                DisposeReaderWhenReady(readerTask);
+                AppLog.Warning("Speech playback",
+                    $"Media Foundation could not open the generated MP3 stream; retrying by downloading the audio locally; " +
+                    $"endpoint={HttpProfileRequestSender.GetSafeEndpoint(audioUri)}.", streamException);
+
+                var audio = await DownloadAudioAsync(audioUri.AbsoluteUri, cancellationToken);
+                await PlayMp3Async(audio, generation, cancellationToken);
+                return;
+            }
             catch
             {
-                _ = readerTask.ContinueWith(
-                    static task =>
-                    {
-                        if (task.Status == TaskStatus.RanToCompletion)
-                            task.Result.Dispose();
-                    },
-                    CancellationToken.None,
-                    TaskContinuationOptions.ExecuteSynchronously,
-                    TaskScheduler.Default);
+                DisposeReaderWhenReady(readerTask);
                 throw;
             }
 
@@ -396,6 +493,17 @@ public sealed class SpeechSynthesisService : IDisposable
         }
     }
 
+    private static void DisposeReaderWhenReady(Task<MediaFoundationReader> readerTask)
+        => _ = readerTask.ContinueWith(
+            static task =>
+            {
+                if (task.Status == TaskStatus.RanToCompletion)
+                    task.Result.Dispose();
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+
     private async Task OpenAndPlayMp3Async(
         System.Windows.Media.MediaPlayer player,
         Uri audioUri,
@@ -429,6 +537,7 @@ public sealed class SpeechSynthesisService : IDisposable
                 _mediaPlayer = player;
                 _temporaryAudioPath = temporaryPath;
                 player.Play();
+                AppLog.Info("Speech playback", "Local audio playback started.");
             }
         }
         catch

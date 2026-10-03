@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -29,6 +30,80 @@ public static class AppLog
     private static DateOnly? _lastPrunedDate;
 
     public static string LogDirectoryPath => LogDirectory;
+
+    public static string GetRecentLogsText(int maxCharacters = 512_000)
+    {
+        const string heading = "Cheems翻译 · 最近 7 天开发日志";
+        const string truncatedNotice = "较早的日志过多，已省略；以下为最近记录。";
+        if (maxCharacters < 1) throw new ArgumentOutOfRangeException(nameof(maxCharacters));
+
+        lock (Sync)
+        {
+            if (!Directory.Exists(LogDirectory)) return $"{heading}{Environment.NewLine}没有可复制的日志。";
+
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            var oldestDate = today.AddDays(-(RetainedCalendarDays - 1));
+            var files = Directory.EnumerateFiles(LogDirectory, $"{FilePrefix}*.log")
+                .Select(path =>
+                {
+                    var name = Path.GetFileNameWithoutExtension(path);
+                    return DateOnly.TryParseExact(name.AsSpan(FilePrefix.Length), "yyyy-MM-dd",
+                        CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+                        ? (Path: path, Date: date)
+                        : default;
+                })
+                .Where(file => file.Path is not null && file.Date >= oldestDate && file.Date <= today)
+                .OrderByDescending(file => file.Date)
+                .ToArray();
+
+            if (files.Length == 0) return $"{heading}{Environment.NewLine}最近 7 天没有日志。";
+
+            var chunks = new List<string>();
+            var remaining = Math.Max(0, maxCharacters - heading.Length - truncatedNotice.Length - 64);
+            var truncated = false;
+            foreach (var file in files)
+            {
+                if (remaining <= 0)
+                {
+                    truncated = true;
+                    break;
+                }
+
+                var content = File.ReadAllText(file.Path!);
+                if (string.IsNullOrEmpty(content)) continue;
+
+                var dateHeading = $"===== {file.Date:yyyy-MM-dd} ====={Environment.NewLine}";
+                var availableContent = remaining - dateHeading.Length;
+                if (content.Length <= availableContent)
+                {
+                    chunks.Add(dateHeading + content);
+                    remaining -= dateHeading.Length + content.Length;
+                    continue;
+                }
+
+                truncated = true;
+                if (availableContent > 0)
+                {
+                    var start = content.Length - availableContent;
+                    if (start > 0)
+                    {
+                        var nextLine = content.IndexOf('\n', start);
+                        if (nextLine >= 0) start = nextLine + 1;
+                    }
+                    var tail = content[start..].TrimStart('\r', '\n');
+                    if (!string.IsNullOrEmpty(tail))
+                        chunks.Add(dateHeading + tail);
+                }
+                break;
+            }
+
+            chunks.Reverse();
+            var result = new StringBuilder(heading).AppendLine().AppendLine();
+            if (truncated) result.AppendLine(truncatedNotice);
+            foreach (var chunk in chunks) result.AppendLine(chunk);
+            return result.ToString();
+        }
+    }
 
     public static void Initialize()
     {
@@ -143,11 +218,20 @@ public static class AppLog
     private static void AppendException(StringBuilder target, Exception exception)
     {
         target.Append(exception.GetType().FullName);
+        target.Append(" (HRESULT 0x")
+            .Append(unchecked((uint)exception.HResult).ToString("X8", CultureInfo.InvariantCulture))
+            .Append(')');
         if (exception is HttpRequestException httpException)
         {
+            target.Append(" (request error: ").Append(httpException.HttpRequestError).Append(')');
             if (httpException.StatusCode is { } statusCode)
                 target.Append(" (HTTP ").Append((int)statusCode).Append(' ').Append(statusCode).Append(')');
             target.AppendLine(" (response message omitted to avoid logging request or response text)");
+        }
+        else if (exception is SocketException socketException)
+        {
+            target.Append(" (socket error: ").Append(socketException.SocketErrorCode)
+                .Append(", native code: ").Append(socketException.NativeErrorCode).AppendLine(")");
         }
         else if (exception is AggregateException)
         {

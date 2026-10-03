@@ -583,6 +583,24 @@ public partial class MainWindow : Window
     private async void ShowStatistics_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => await new DailyStatisticsWindow(_usageStatisticsStore).ShowDialog(this);
 
+    private async void CopyRecentLogs_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        try
+        {
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard is null) throw new InvalidOperationException("当前窗口没有可用的剪贴板。");
+
+            var logs = await Task.Run(() => AppLog.GetRecentLogsText());
+            await clipboard.SetTextAsync(logs);
+            SetStatus($"已复制最近日志 · {logs.Length:N0} 字符");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Application logs", "Failed to copy recent application logs to the clipboard.", ex);
+            SetStatus($"复制日志失败：{ex.Message}");
+        }
+    }
+
     private async Task InitializeUsageStatisticsStoreAsync()
     {
         try
