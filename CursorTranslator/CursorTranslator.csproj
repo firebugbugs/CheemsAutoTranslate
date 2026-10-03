@@ -2,10 +2,10 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
-    <Version>0.0.2-beta4</Version>
+    <Version>0.0.2</Version>
     <AssemblyVersion>0.0.2.0</AssemblyVersion>
     <FileVersion>0.0.2.0</FileVersion>
-    <InformationalVersion>0.0.2-beta4</InformationalVersion>
+    <InformationalVersion>0.0.2</InformationalVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
