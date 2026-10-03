@@ -1,0 +1,26 @@
+<Styles xmlns="https://github.com/avaloniaui">
+  <Style Selector="Button.window-control">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="#655A52" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Width" Value="38" />
+    <Setter Property="Height" Value="30" />
+    <Setter Property="MinWidth" Value="38" />
+    <Setter Property="MinHeight" Value="30" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Opacity" Value="1" />
+  </Style>
+  <Style Selector="Button.window-control:pointerover">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="Opacity" Value="0.68" />
+  </Style>
+  <Style Selector="Button.window-control:pressed">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="Opacity" Value="0.42" />
+  </Style>
+</Styles>

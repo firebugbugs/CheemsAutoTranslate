@@ -153,6 +153,7 @@ public partial class AboutWindow : Window
         }
         catch (Exception exception)
         {
+            AppLog.Error("Update check", "Failed to check for updates.", exception);
             _latestRelease = null;
             UpdateStatusText.Text = exception is HttpRequestException { StatusCode: HttpStatusCode.NotFound }
                 ? "无法访问 Gitee 项目，请确认仓库已公开且地址有效。"
@@ -212,6 +213,7 @@ public partial class AboutWindow : Window
         }
         catch (Exception exception)
         {
+            AppLog.Error("Update download", "Failed to download the installer.", exception);
             UpdateStatusText.Text = "下载中断，已下载内容已保留，可继续重试。";
             Avalonia.Controls.ToolTip.SetTip(UpdateStatusText, exception.Message);
             UpdateActionButtonText.Text = "继续下载";
@@ -269,6 +271,7 @@ public partial class AboutWindow : Window
         }
         catch (Exception exception)
         {
+            AppLog.Error("Update install", "Failed to start the installer handoff.", exception);
             UpdateStatusText.Text = "无法启动自动安装，请从 Gitee 手动下载并安装。";
             Avalonia.Controls.ToolTip.SetTip(UpdateStatusText, exception.Message);
             UpdateActionButton.IsEnabled = true;

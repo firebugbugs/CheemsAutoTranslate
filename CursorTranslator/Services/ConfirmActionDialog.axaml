@@ -1,0 +1,48 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CursorTranslator.Services.ConfirmActionDialog"
+        Icon="/Assets/translator_icon.ico"
+        Title="请确认" Width="440" Height="220" MinWidth="400" MinHeight="200"
+        WindowStartupLocation="CenterOwner" CanResize="False" ShowInTaskbar="False"
+        SystemDecorations="None" Background="Transparent" TransparencyLevelHint="Transparent"
+        Foreground="#302B27">
+  <Window.Styles>
+    <Style Selector="Button">
+      <Setter Property="Background" Value="#A95032" />
+      <Setter Property="Foreground" Value="#FFFFFF" />
+      <Setter Property="BorderBrush" Value="#A95032" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="14,7" />
+      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button:pointerover">
+      <Setter Property="Background" Value="#914329" />
+      <Setter Property="BorderBrush" Value="#914329" />
+    </Style>
+    <Style Selector="Button.secondary">
+      <Setter Property="Background" Value="#F7F1EB" />
+      <Setter Property="Foreground" Value="#684B3C" />
+      <Setter Property="BorderBrush" Value="#E7D8CA" />
+    </Style>
+    <Style Selector="Button.secondary:pointerover">
+      <Setter Property="Background" Value="#F0E5DA" />
+      <Setter Property="BorderBrush" Value="#D9C6B5" />
+    </Style>
+  </Window.Styles>
+
+  <Border Margin="8" Padding="20" CornerRadius="14" Background="#FAF8F5"
+          BorderBrush="#DCD2C8" BorderThickness="1">
+    <Grid RowDefinitions="Auto,*,Auto" RowSpacing="12">
+      <TextBlock x:Name="DialogTitleText" Text="请确认" FontSize="18" FontWeight="Bold" />
+      <TextBlock x:Name="MessageText" Grid.Row="1" FontSize="13" Foreground="#655A52"
+                 TextWrapping="Wrap" VerticalAlignment="Center" />
+      <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button Content="取消" Classes="secondary" Click="Cancel_Click" />
+        <Button x:Name="ConfirmButton" Content="确定" Click="Confirm_Click" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

@@ -11,7 +11,7 @@
         Foreground="#302B27">
   <Window.Styles>
     <Style Selector="TextBox">
-      <Setter Property="Background" Value="#FFFEFC" />
+      <Setter Property="Background" Value="Transparent" />
       <Setter Property="Foreground" Value="#302B27" />
       <Setter Property="BorderBrush" Value="#E6DED5" />
       <Setter Property="BorderThickness" Value="1" />
@@ -80,30 +80,6 @@
       <Setter Property="Background" Value="#F0E5DA" />
       <Setter Property="BorderBrush" Value="#D9C6B5" />
     </Style>
-    <Style Selector="Button.window-control">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="#655A52" />
-      <Setter Property="BorderBrush" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="Width" Value="38" />
-      <Setter Property="Height" Value="30" />
-      <Setter Property="MinWidth" Value="38" />
-      <Setter Property="MinHeight" Value="30" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
-      <Setter Property="Opacity" Value="1" />
-    </Style>
-    <Style Selector="Button.window-control:pointerover">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderBrush" Value="Transparent" />
-      <Setter Property="Opacity" Value="0.68" />
-    </Style>
-    <Style Selector="Button.window-control:pressed">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderBrush" Value="Transparent" />
-      <Setter Property="Opacity" Value="0.42" />
-    </Style>
     <Style Selector="ToggleButton.startup-toggle">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderBrush" Value="Transparent" />
@@ -138,12 +114,20 @@
           <TextBlock Text="Cheems翻译" FontSize="13" Foreground="#756B63" VerticalAlignment="Center" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3" VerticalAlignment="Center">
+          <Button x:Name="StatisticsButton" Classes="window-control" ToolTip.Tip="每日统计"
+                  Click="ShowStatistics_Click">
+            <Grid Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center">
+              <Path Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Fill="{Binding #StatisticsButton.Foreground}"
+                    Data="M917 872H107c-24.9 0-45 20.1-45 45s20.1 45 45 45h810c24.9 0 45-20.1 45-45s-20.1-45-45-45zM182 782c66.3 0 120-53.7 120-120V482c0-66.3-53.7-120-120-120S62 415.7 62 482v180c0 66.3 53.7 120 120 120z m-30-300c0-16.6 13.4-30 30-30s30 13.4 30 30v180c0 16.6-13.4 30-30 30s-30-13.4-30-30V482zM512 782c66.3 0 120-53.7 120-120V362c0-66.3-53.7-120-120-120s-120 53.7-120 120v300c0 66.3 53.7 120 120 120z m-30-420c0-16.6 13.4-30 30-30s30 13.4 30 30v300c0 16.6-13.4 30-30 30s-30-13.4-30-30V362zM842 62c-66.3 0-120 53.7-120 120v480c0 66.3 53.7 120 120 120s120-53.7 120-120V182c0-66.3-53.7-120-120-120z m30 600c0 16.6-13.4 30-30 30s-30-13.4-30-30V182c0-16.6 13.4-30 30-30s30 13.4 30 30v480z" />
+            </Grid>
+          </Button>
           <Button x:Name="MinimizeWindowButton" Classes="window-control" ToolTip.Tip="最小化"
                   Click="MinimizeWindow_Click">
             <Grid Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center">
               <Path Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
                   Fill="{Binding #MinimizeWindowButton.Foreground}"
-                  Data="M923 571H130.7c-27.6 0-50-22.4-50-50s22.4-50 50-50H923c27.6 0 50 22.4 50 50s-22.4 50-50 50z" />
+                  Data="{StaticResource WindowMinimizeGeometry}" />
             </Grid>
           </Button>
           <Button x:Name="MaximizeButton" Classes="window-control" ToolTip.Tip="最大化"
@@ -151,11 +135,11 @@
             <Grid Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center">
               <Path x:Name="MaximizeIcon" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
                     Fill="{Binding #MaximizeButton.Foreground}"
-                    Data="M770.9 923.3H253.1c-83.8 0-151.9-68.2-151.9-151.9V253.6c0-83.8 68.2-151.9 151.9-151.9h517.8c83.8 0 151.9 68.2 151.9 151.9v517.8c0 83.8-68.1 151.9-151.9 151.9zM253.1 181.7c-39.7 0-71.9 32.3-71.9 71.9v517.8c0 39.7 32.3 71.9 71.9 71.9h517.8c39.7 0 71.9-32.3 71.9-71.9V253.6c0-39.7-32.3-71.9-71.9-71.9H253.1z" />
+                    Data="{StaticResource WindowMaximizeGeometry}" />
               <Path x:Name="RestoreIcon" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
                     IsVisible="False"
                     Fill="{Binding #MaximizeButton.Foreground}"
-                    Data="M172.8 1017.6c-89.6 0-166.4-70.4-166.4-166.4V441.6c0-89.6 70.4-166.4 166.4-166.4h416c89.6 0 166.4 76.8 166.4 166.4v416c0 89.6-70.4 166.4-166.4 166.4l-416-6.4z m0-659.2c-51.2 0-89.6 38.4-89.6 89.6v416c0 51.2 38.4 89.6 89.6 89.6h416c51.2 0 89.6-38.4 89.6-89.6V441.6c0-51.2-38.4-89.6-89.6-89.6H172.8z M851.2 19.2H435.2C339.2 19.2 268.8 96 268.8 185.6v25.6h70.4v-25.6c0-51.2 38.4-89.6 89.6-89.6h409.6c51.2 0 89.6 38.4 89.6 89.6v409.6c0 51.2-38.4 89.6-89.6 89.6h-38.4V768h51.2c96 0 166.4-76.8 166.4-166.4V185.6c0-96-76.8-166.4-166.4-166.4z" />
+                    Data="{StaticResource WindowRestoreGeometry}" />
             </Grid>
           </Button>
           <Button x:Name="CloseWindowButton" Classes="window-control close" ToolTip.Tip="关闭设置窗口"
@@ -163,7 +147,7 @@
             <Grid Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center">
               <Path Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
                   Fill="{Binding #CloseWindowButton.Foreground}"
-                  Data="M259.008 797.44a32 32 0 0 1-22.656-54.592l505.856-505.856a32 32 0 0 1 45.248 45.248L281.6 788.032a31.68 31.68 0 0 1-22.592 9.408z M764.864 797.44a32.128 32.128 0 0 1-22.656-9.344L236.352 282.176a32 32 0 0 1 45.248-45.248l505.856 505.856a32 32 0 0 1-22.592 54.656z" />
+                  Data="{StaticResource WindowCloseGeometry}" />
             </Grid>
           </Button>
         </StackPanel>
@@ -177,7 +161,7 @@
               <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
                 <TextBlock x:Name="MonitorStateText" Text="监控中" FontSize="12" FontWeight="SemiBold"
                            Foreground="#9E4B2E" VerticalAlignment="Center" />
-                <TextBlock x:Name="StatusText" Grid.Column="1" Text="设置翻译模型" FontSize="12"
+                <TextBlock x:Name="StatusText" Grid.Column="1" Text="设置翻译接口" FontSize="12"
                            Foreground="#756B63" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
                            ToolTip.Tip="运行状态和错误信息。" />
               </Grid>
@@ -206,97 +190,188 @@
           </Grid>
 
           <Border Grid.Row="1" Grid.Column="0" Padding="14" CornerRadius="13"
-                  Background="#FFFEFC" BorderBrush="#EAE2D9" BorderThickness="1">
-            <StackPanel Spacing="8">
-              <TextBlock Text="模型连接" FontSize="16" FontWeight="Bold" />
-              <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-                <StackPanel Spacing="4">
-                  <TextBlock Text="API 地址" FontSize="12" FontWeight="SemiBold" Foreground="#655A52" />
-                  <TextBox x:Name="EndpointBox" Watermark="http://127.0.0.1:11434/v1"
-                           ToolTip.Tip="OpenAI 兼容接口地址。Ollama 默认端口是 11434。" />
-                </StackPanel>
-                <StackPanel Grid.Column="1" Spacing="4">
-                  <TextBlock Text="模型名称" FontSize="12" FontWeight="SemiBold" Foreground="#655A52" />
-                  <TextBox x:Name="ModelBox" Watermark="模型名称"
-                           ToolTip.Tip="填写服务端可用的模型名称。" />
-                </StackPanel>
-              </Grid>
+                  Background="#FFFEFC" BorderBrush="#EAE2D9" BorderThickness="1" ClipToBounds="True">
+            <Grid ClipToBounds="True">
+              <TextBlock Text="翻译模型" FontSize="72" FontWeight="Bold" Foreground="#A95032"
+                         Opacity="0.14" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                         Margin="0,0,14,10" IsHitTestVisible="False" />
+              <TabControl x:Name="TranslationProviderTabs" Background="Transparent">
+              <TabItem x:Name="AiProviderTab">
+                <TabItem.Header>
+                  <StackPanel Orientation="Horizontal" Spacing="5">
+                    <TextBlock Text="AI 接入" />
+                    <TextBlock x:Name="AiProviderCheckMark" Text="✓" Foreground="#38875B"
+                               FontWeight="Bold" IsVisible="False" />
+                  </StackPanel>
+                </TabItem.Header>
+                <StackPanel Spacing="8" Margin="2,8,2,2">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="OpenAI 兼容接口" FontSize="14" FontWeight="Bold" VerticalAlignment="Center" />
+                    <ToggleSwitch x:Name="EnableAiProviderSwitch" Grid.Column="1" OnContent="启用" OffContent="停用"
+                                  Checked="TranslationProviderSwitch_Changed" Unchecked="TranslationProviderSwitch_Changed"
+                                  ToolTip.Tip="启用后使用此 AI 接口翻译；同一时间只启用一个翻译接口。" />
+                  </Grid>
+                  <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                    <StackPanel Spacing="4">
+                      <TextBlock Text="API 地址" FontSize="12" FontWeight="SemiBold" Foreground="#655A52" />
+                      <TextBox x:Name="EndpointBox" Watermark="http://127.0.0.1:11434/v1"
+                               ToolTip.Tip="OpenAI 兼容接口地址。Ollama 默认端口是 11434。" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="4">
+                      <TextBlock Text="模型名称" FontSize="12" FontWeight="SemiBold" Foreground="#655A52" />
+                      <TextBox x:Name="ModelBox" Watermark="模型名称"
+                               ToolTip.Tip="填写服务端可用的模型名称。" />
+                    </StackPanel>
+                  </Grid>
 
-              <StackPanel Spacing="4">
-                <TextBlock Text="API Key（可选）" FontSize="12" FontWeight="SemiBold" Foreground="#655A52" />
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                  <TextBox x:Name="ApiKeyBox" PasswordChar="●" Watermark="API Key"
-                           ToolTip.Tip="可留空；本地 Ollama 可填写 ollama。填写的密钥使用 Windows DPAPI 加密保存。" />
-                  <Button x:Name="ApiKeyVisibilityButton" Grid.Column="1" Classes="secondary" Width="38" Padding="0"
-                          Click="ToggleApiKeyVisibility_Click" ToolTip.Tip="显示 API Key">
-                    <Grid Width="18" Height="16">
-                      <Path Data="M 1,8 C 4,2 14,2 17,8 C 14,14 4,14 1,8 Z"
-                            Stroke="#684B3C" StrokeThickness="1.5" Fill="Transparent" />
-                      <Ellipse Width="4" Height="4" Fill="#684B3C"
-                               HorizontalAlignment="Center" VerticalAlignment="Center" />
-                      <Path x:Name="ApiKeyEyeSlash" Data="M 2,1 L 16,15" Stroke="#684B3C"
-                            StrokeThickness="1.5" IsVisible="False" />
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="API Key（可选）" FontSize="12" FontWeight="SemiBold" Foreground="#655A52" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                      <TextBox x:Name="ApiKeyBox" PasswordChar="●" Watermark="API Key"
+                               ToolTip.Tip="可留空；本地 Ollama 可填写 ollama。填写的密钥使用 Windows DPAPI 加密保存。" />
+                      <Button x:Name="ApiKeyVisibilityButton" Grid.Column="1" Classes="secondary" Width="38" Padding="0"
+                              Click="ToggleApiKeyVisibility_Click" ToolTip.Tip="显示 API Key">
+                        <Grid Width="18" Height="16">
+                          <Path Data="M 1,8 C 4,2 14,2 17,8 C 14,14 4,14 1,8 Z"
+                                Stroke="#684B3C" StrokeThickness="1.5" Fill="Transparent" />
+                          <Ellipse Width="4" Height="4" Fill="#684B3C"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                          <Path x:Name="ApiKeyEyeSlash" Data="M 2,1 L 16,15" Stroke="#684B3C"
+                                StrokeThickness="1.5" IsVisible="False" />
+                        </Grid>
+                      </Button>
                     </Grid>
-                  </Button>
-                </Grid>
-              </StackPanel>
+                  </StackPanel>
 
-              <StackPanel Spacing="4">
-                <TextBlock Text="翻译指令" FontSize="12" FontWeight="SemiBold" Foreground="#655A52" />
-                <TextBox x:Name="SystemPromptBox" AcceptsReturn="True" MinHeight="68" TextWrapping="Wrap"
-                         Watermark="翻译指令" ToolTip.Tip="设定目标语言、语气和格式要求。" />
-              </StackPanel>
-            </StackPanel>
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="翻译指令" FontSize="12" FontWeight="SemiBold" Foreground="#655A52" />
+                    <TextBox x:Name="SystemPromptBox" AcceptsReturn="True" MinHeight="68" TextWrapping="Wrap"
+                             Watermark="翻译指令" ToolTip.Tip="设定目标语言、语气和格式要求。" />
+                  </StackPanel>
+                </StackPanel>
+              </TabItem>
+
+              <TabItem x:Name="HttpProviderTab">
+                <TabItem.Header>
+                  <StackPanel Orientation="Horizontal" Spacing="5">
+                    <TextBlock Text="HTTP 接入" />
+                    <TextBlock x:Name="HttpProviderCheckMark" Text="✓" Foreground="#38875B"
+                               FontWeight="Bold" IsVisible="False" />
+                  </StackPanel>
+                </TabItem.Header>
+                <StackPanel Spacing="8" Margin="2,8,2,2">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="HTTP 翻译接口" FontSize="14" FontWeight="Bold" VerticalAlignment="Center" />
+                    <ToggleSwitch x:Name="EnableHttpProviderSwitch" Grid.Column="1" OnContent="启用" OffContent="停用"
+                                  Checked="TranslationProviderSwitch_Changed" Unchecked="TranslationProviderSwitch_Changed"
+                                  ToolTip.Tip="启用后通过兼容的 HTTP 文本翻译接口翻译；同一时间只启用一个翻译接口。" />
+                  </Grid>
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <ComboBox x:Name="HttpTranslationProfileComboBox" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                              ToolTip.Tip="选择当前使用的 HTTP 翻译接口档案。" />
+                    <Button Grid.Column="1" Content="管理HTTP接口" Classes="secondary"
+                            Click="ManageTranslationHttpProfiles_Click" />
+                  </Grid>
+                  <TextBlock Text="接口地址、语言、请求格式、鉴权及译文字段都在接口档案中配置；API Key 等密钥会加密保存在本机。"
+                             FontSize="11" Foreground="#756B63" TextWrapping="Wrap" />
+                </StackPanel>
+              </TabItem>
+              </TabControl>
+            </Grid>
           </Border>
 
           <Border Grid.Row="1" Grid.Column="1" Padding="14" CornerRadius="13"
-                  Background="#FFFEFC" BorderBrush="#EAE2D9" BorderThickness="1">
-            <StackPanel Spacing="8">
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="语音模型接入" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" />
-                <CheckBox x:Name="RealTimeSpeechCheckBox" Grid.Column="1" Content="实时语音"
-                          VerticalAlignment="Center"
-                          Checked="RealTimeSpeech_Changed" Unchecked="RealTimeSpeech_Changed"
-                          ToolTip.Tip="开启后，每次翻译完成都会自动播报；新播报会停止并替换上一条语音。" />
-              </Grid>
-              <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-                <StackPanel Spacing="4">
-                  <TextBlock Text="API 地址" FontSize="12" FontWeight="SemiBold" Foreground="#655A52" />
-                  <TextBox x:Name="SpeechEndpointBox" Watermark="https://api.openai.com/v1"
-                           ToolTip.Tip="OpenAI 兼容语音接口地址，会请求其 /audio/speech 路径。" />
-                </StackPanel>
-                <StackPanel Grid.Column="1" Spacing="4">
-                  <TextBlock Text="模型名称" FontSize="12" FontWeight="SemiBold" Foreground="#655A52" />
-                  <TextBox x:Name="SpeechModelBox" Watermark="gpt-4o-mini-tts"
-                           ToolTip.Tip="填写语音服务端支持的文字转语音模型名称。" />
-                </StackPanel>
-              </Grid>
-              <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-                <StackPanel Spacing="4">
-                  <TextBlock Text="API Key（可选）" FontSize="12" FontWeight="SemiBold" Foreground="#655A52" />
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                    <TextBox x:Name="SpeechApiKeyBox" PasswordChar="●" Watermark="API Key"
-                             ToolTip.Tip="可留空；填写的密钥使用 Windows DPAPI 加密保存。" />
-                    <Button x:Name="SpeechApiKeyVisibilityButton" Grid.Column="1" Classes="secondary" Width="38" Padding="0"
-                            Click="ToggleSpeechApiKeyVisibility_Click" ToolTip.Tip="显示 API Key">
-                      <Grid Width="18" Height="16">
-                        <Path Data="M 1,8 C 4,2 14,2 17,8 C 14,14 4,14 1,8 Z"
-                              Stroke="#684B3C" StrokeThickness="1.5" Fill="Transparent" />
-                        <Ellipse Width="4" Height="4" Fill="#684B3C"
-                                 HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        <Path x:Name="SpeechApiKeyEyeSlash" Data="M 2,1 L 16,15" Stroke="#684B3C"
-                              StrokeThickness="1.5" IsVisible="False" />
-                      </Grid>
-                    </Button>
-                  </Grid>
-                </StackPanel>
-                <StackPanel Grid.Column="1" Spacing="4">
-                  <TextBlock Text="音色" FontSize="12" FontWeight="SemiBold" Foreground="#655A52" />
-                  <TextBox x:Name="SpeechVoiceBox" Text="alloy" Watermark="alloy"
-                           ToolTip.Tip="填写语音服务支持的音色名称，例如 alloy。" />
-                </StackPanel>
-              </Grid>
-            </StackPanel>
+                  Background="#FFFEFC" BorderBrush="#EAE2D9" BorderThickness="1" ClipToBounds="True">
+            <Grid ClipToBounds="True">
+              <TextBlock Text="语音模型" FontSize="72" FontWeight="Bold" Foreground="#A95032"
+                         Opacity="0.14" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                         Margin="0,0,14,10" IsHitTestVisible="False" />
+              <StackPanel Spacing="8">
+              <TabControl x:Name="SpeechProviderTabs" Background="Transparent">
+                <TabItem x:Name="SpeechAiProviderTab">
+                  <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                      <TextBlock Text="AI 接入" />
+                      <TextBlock x:Name="SpeechAiProviderCheckMark" Text="✓" Foreground="#38875B"
+                                 FontWeight="Bold" IsVisible="False" />
+                    </StackPanel>
+                  </TabItem.Header>
+                  <StackPanel Spacing="8" Margin="2,8,2,2">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Text="OpenAI 兼容接口" FontSize="14" FontWeight="Bold" VerticalAlignment="Center" />
+                      <ToggleSwitch x:Name="EnableSpeechAiSwitch" Grid.Column="1" OnContent="启用" OffContent="停用"
+                                    Checked="SpeechProviderSwitch_Changed" Unchecked="SpeechProviderSwitch_Changed"
+                                    ToolTip.Tip="启用后通过 OpenAI 兼容接口合成语音；同一时间只启用一个语音接口。" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                      <StackPanel Spacing="4">
+                        <TextBlock Text="API 地址" FontSize="12" FontWeight="SemiBold" Foreground="#655A52" />
+                        <TextBox x:Name="SpeechEndpointBox" Watermark="OpenAI 兼容 API 根地址"
+                                 ToolTip.Tip="OpenAI 兼容模式会请求此地址下的 /audio/speech 路径。" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="1" Spacing="4">
+                        <TextBlock Text="模型名称" FontSize="12" FontWeight="SemiBold" Foreground="#655A52" />
+                        <TextBox x:Name="SpeechModelBox" Watermark="模型名称"
+                                 ToolTip.Tip="填写语音服务端支持的文字转语音模型名称。" />
+                      </StackPanel>
+                    </Grid>
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                      <StackPanel Spacing="4">
+                        <TextBlock Text="API Key（可选）" FontSize="12" FontWeight="SemiBold" Foreground="#655A52" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                          <TextBox x:Name="SpeechApiKeyBox" PasswordChar="●" Watermark="API Key"
+                                   ToolTip.Tip="可留空；填写的密钥使用 Windows DPAPI 加密保存。" />
+                          <Button x:Name="SpeechApiKeyVisibilityButton" Grid.Column="1" Classes="secondary" Width="38" Padding="0"
+                                  Click="ToggleSpeechApiKeyVisibility_Click" ToolTip.Tip="显示 API Key">
+                            <Grid Width="18" Height="16">
+                              <Path Data="M 1,8 C 4,2 14,2 17,8 C 14,14 4,14 1,8 Z"
+                                    Stroke="#684B3C" StrokeThickness="1.5" Fill="Transparent" />
+                              <Ellipse Width="4" Height="4" Fill="#684B3C"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                              <Path x:Name="SpeechApiKeyEyeSlash" Data="M 2,1 L 16,15" Stroke="#684B3C"
+                                    StrokeThickness="1.5" IsVisible="False" />
+                            </Grid>
+                          </Button>
+                        </Grid>
+                      </StackPanel>
+                      <StackPanel Grid.Column="1" Spacing="4">
+                        <TextBlock Text="音色" FontSize="12" FontWeight="SemiBold" Foreground="#655A52" />
+                        <TextBox x:Name="SpeechVoiceBox" Text="alloy" Watermark="alloy"
+                                 ToolTip.Tip="填写语音服务支持的音色名称，例如 alloy。" />
+                      </StackPanel>
+                    </Grid>
+                  </StackPanel>
+                </TabItem>
+                <TabItem x:Name="SpeechHttpProviderTab">
+                  <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                      <TextBlock Text="HTTP 接入" />
+                      <TextBlock x:Name="SpeechHttpProviderCheckMark" Text="✓" Foreground="#38875B"
+                                 FontWeight="Bold" IsVisible="False" />
+                    </StackPanel>
+                  </TabItem.Header>
+                  <StackPanel Spacing="8" Margin="2,8,2,2">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Text="通用 HTTP 语音接口" FontSize="14" FontWeight="Bold" VerticalAlignment="Center" />
+                      <ToggleSwitch x:Name="EnableSpeechHttpSwitch" Grid.Column="1" OnContent="启用" OffContent="停用"
+                                    Checked="SpeechProviderSwitch_Changed" Unchecked="SpeechProviderSwitch_Changed"
+                                    ToolTip.Tip="启用后通过已配置的 HTTP 接口档案合成语音；同一时间只启用一个语音接口。" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                      <ComboBox x:Name="HttpSpeechProfileComboBox" HorizontalAlignment="Stretch"
+                                VerticalAlignment="Center" />
+                      <Button Grid.Column="1" Content="管理HTTP接口" Classes="secondary"
+                              Click="ManageSpeechHttpProfiles_Click" />
+                    </Grid>
+                  </StackPanel>
+                </TabItem>
+              </TabControl>
+              </StackPanel>
+              <CheckBox x:Name="RealTimeSpeechCheckBox" Content="实时语音"
+                        HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,4,2"
+                        Checked="RealTimeSpeech_Changed" Unchecked="RealTimeSpeech_Changed"
+                        ToolTip.Tip="开启后，每次翻译完成都会自动播报；新播报会停止并替换上一条语音。" />
+            </Grid>
           </Border>
 
           <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="1.25*,*,2*" ColumnSpacing="10">
@@ -340,7 +415,11 @@
           <Border Grid.Column="2" Padding="14" CornerRadius="13" Background="#FFFEFC"
                     BorderBrush="#EAE2D9" BorderThickness="1">
             <StackPanel Spacing="8">
-                <TextBlock Text="试译" FontSize="16" FontWeight="Bold" />
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Text="试译" FontSize="16" FontWeight="Bold" />
+                  <TextBlock x:Name="TestProviderLabel" Grid.Column="1" Text="当前：AI 接入"
+                             FontSize="11" Foreground="#756B63" VerticalAlignment="Center" />
+                </Grid>
                 <TextBox x:Name="TestInputBox" Text="你好世界" AcceptsReturn="True" MinHeight="54"
                          TextWrapping="Wrap" Watermark="输入测试文本"
                          ToolTip.Tip="手动试译不会启动输入监控。" />

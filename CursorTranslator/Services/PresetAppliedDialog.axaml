@@ -1,0 +1,50 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CursorTranslator.Services.PresetAppliedDialog"
+        Icon="/Assets/translator_icon.ico"
+        Title="预设已应用"
+        Width="440" Height="224" MinWidth="380" MinHeight="190"
+        CanResize="False" SystemDecorations="None"
+        WindowStartupLocation="CenterOwner"
+        Background="Transparent" TransparencyLevelHint="Transparent"
+        Foreground="#302B27">
+  <Window.Styles>
+    <Style Selector="Button.confirm-button">
+      <Setter Property="Background" Value="#A95032" />
+      <Setter Property="Foreground" Value="#FFFFFF" />
+      <Setter Property="BorderBrush" Value="#A95032" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="18,7" />
+      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="MinWidth" Value="96" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.confirm-button:pointerover">
+      <Setter Property="Background" Value="#914329" />
+      <Setter Property="BorderBrush" Value="#914329" />
+    </Style>
+    <Style Selector="Button.confirm-button:pressed">
+      <Setter Property="Background" Value="#793820" />
+      <Setter Property="BorderBrush" Value="#793820" />
+    </Style>
+  </Window.Styles>
+
+  <Border Margin="8" Padding="20" CornerRadius="14" Background="#FAF8F5"
+          BorderBrush="#DCD2C8" BorderThickness="1">
+    <Grid RowDefinitions="Auto,*,Auto" RowSpacing="16">
+      <StackPanel x:Name="TitleBar" Orientation="Horizontal" Spacing="9"
+                  VerticalAlignment="Center" PointerPressed="TitleBar_PointerPressed">
+        <Image Source="/Assets/translator_icon.png" Width="21" Height="21" Stretch="Uniform" />
+        <TextBlock Text="预设已应用" FontSize="15" FontWeight="SemiBold" Foreground="#493F38"
+                   VerticalAlignment="Center" />
+      </StackPanel>
+      <TextBlock x:Name="MessageText" Grid.Row="1" FontSize="13" Foreground="#655A52"
+                 TextWrapping="Wrap" VerticalAlignment="Center" />
+      <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+        <Button Classes="confirm-button" Content="确定" Click="Confirm_Click" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

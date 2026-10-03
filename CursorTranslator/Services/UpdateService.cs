@@ -104,7 +104,7 @@ public sealed class UpdateService
             releasePage,
             asset?.DownloadUri,
             asset?.Size,
-            releaseVersion > currentVersion);
+            IsVersionLabelNewer(tagName, CurrentVersionLabel, releaseVersion, currentVersion));
     }
 
     public DownloadState GetDownloadState(UpdateRelease release)
@@ -550,6 +550,49 @@ public sealed class UpdateService
 
         version = new Version(0, 0);
         return false;
+    }
+
+    private static bool IsVersionLabelNewer(string candidate, string current, Version candidateVersion, Version currentVersion)
+    {
+        var numericComparison = candidateVersion.CompareTo(currentVersion);
+        if (numericComparison != 0) return numericComparison > 0;
+
+        static string? GetPrerelease(string label)
+        {
+            var normalized = label.Trim().TrimStart('v', 'V');
+            var metadataIndex = normalized.IndexOf('+');
+            if (metadataIndex >= 0) normalized = normalized[..metadataIndex];
+            var suffixIndex = normalized.IndexOf('-');
+            return suffixIndex < 0 ? null : normalized[(suffixIndex + 1)..];
+        }
+
+        var candidatePrerelease = GetPrerelease(candidate);
+        var currentPrerelease = GetPrerelease(current);
+        if (candidatePrerelease is null) return currentPrerelease is not null;
+        if (currentPrerelease is null) return false;
+
+        var candidateParts = candidatePrerelease.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        var currentParts = currentPrerelease.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        for (var index = 0; index < Math.Min(candidateParts.Length, currentParts.Length); index++)
+        {
+            var candidateNumeric = ulong.TryParse(candidateParts[index], NumberStyles.None, CultureInfo.InvariantCulture, out var candidateNumber);
+            var currentNumeric = ulong.TryParse(currentParts[index], NumberStyles.None, CultureInfo.InvariantCulture, out var currentNumber);
+            if (candidateNumeric && currentNumeric)
+            {
+                var comparison = candidateNumber.CompareTo(currentNumber);
+                if (comparison != 0) return comparison > 0;
+            }
+            else if (candidateNumeric != currentNumeric)
+            {
+                return !candidateNumeric;
+            }
+            else
+            {
+                var comparison = string.Compare(candidateParts[index], currentParts[index], StringComparison.Ordinal);
+                if (comparison != 0) return comparison > 0;
+            }
+        }
+        return candidateParts.Length > currentParts.Length;
     }
 
     private static string? NormalizeVersionLabel(string? value)

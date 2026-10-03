@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using CursorTranslator.Services;
 using Forms = System.Windows.Forms;
 using System.IO;
 
@@ -14,7 +15,12 @@ public partial class App : Avalonia.Application
     private System.Drawing.Icon? _trayIconImage;
     private Stream? _trayIconStream;
 
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize()
+    {
+        Dispatcher.UIThread.UnhandledException += (_, eventArgs) =>
+            AppLog.Error("Avalonia UI", "Unhandled dispatcher exception.", eventArgs.Exception);
+        AvaloniaXamlLoader.Load(this);
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {
@@ -68,6 +74,7 @@ public partial class App : Avalonia.Application
             mainWindow.StartMonitoring();
             desktop.Exit += (_, _) =>
             {
+                AppLog.Info("Application", "Desktop lifetime exited.");
                 if (_trayIcon is not null)
                 {
                     _trayIcon.Visible = false;

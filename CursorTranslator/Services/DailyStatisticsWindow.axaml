@@ -1,0 +1,199 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:services="using:CursorTranslator.Services"
+        x:Class="CursorTranslator.Services.DailyStatisticsWindow"
+        Icon="/Assets/translator_icon.ico"
+        Title="每日统计" Width="1040" Height="820" MinWidth="900" MinHeight="720"
+        WindowStartupLocation="CenterOwner" CanResize="True" ShowInTaskbar="False"
+        SystemDecorations="None" Background="Transparent" TransparencyLevelHint="Transparent"
+        Foreground="#302B27">
+  <Window.Styles>
+    <Style Selector="Button">
+      <Setter Property="Background" Value="#A95032" />
+      <Setter Property="Foreground" Value="#FFFFFF" />
+      <Setter Property="BorderBrush" Value="#A95032" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="12,7" />
+      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button:pointerover">
+      <Setter Property="Background" Value="#914329" />
+      <Setter Property="BorderBrush" Value="#914329" />
+    </Style>
+    <Style Selector="Button.secondary">
+      <Setter Property="Background" Value="#F7F1EB" />
+      <Setter Property="Foreground" Value="#684B3C" />
+      <Setter Property="BorderBrush" Value="#E7D8CA" />
+    </Style>
+    <Style Selector="Button.secondary:pointerover">
+      <Setter Property="Background" Value="#F0E5DA" />
+      <Setter Property="BorderBrush" Value="#D9C6B5" />
+    </Style>
+    <Style Selector="TextBox.date-input">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="#302B27" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBox.date-input:focus">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+  </Window.Styles>
+
+  <Border Margin="8" CornerRadius="14" Background="#FAF8F5"
+          BorderBrush="#DCD2C8" BorderThickness="1" ClipToBounds="True"
+          PointerPressed="WindowSurface_PointerPressed">
+    <Grid RowDefinitions="40,*">
+      <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="10,2,8,0">
+        <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+          <Image Source="/Assets/translator_icon.png" Width="20" Height="20" Stretch="Uniform" />
+          <TextBlock Text="每日统计" FontSize="13" Foreground="#756B63" VerticalAlignment="Center" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3" VerticalAlignment="Center">
+          <Button x:Name="MinimizeWindowButton" Classes="window-control" ToolTip.Tip="最小化"
+                  Click="Minimize_Click">
+            <Grid Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center">
+              <Path Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Fill="{Binding #MinimizeWindowButton.Foreground}"
+                    Data="{StaticResource WindowMinimizeGeometry}" />
+            </Grid>
+          </Button>
+          <Button x:Name="MaximizeButton" Classes="window-control" ToolTip.Tip="最大化"
+                  Click="Maximize_Click">
+            <Grid Width="18" Height="18">
+              <Path x:Name="MaximizeIcon" Stretch="Uniform" HorizontalAlignment="Center"
+                    VerticalAlignment="Center" Fill="{Binding #MaximizeButton.Foreground}"
+                    Data="{StaticResource WindowMaximizeGeometry}" />
+              <Path x:Name="RestoreIcon" Stretch="Uniform" HorizontalAlignment="Center"
+                    VerticalAlignment="Center" Fill="{Binding #MaximizeButton.Foreground}"
+                    IsVisible="False" Data="{StaticResource WindowRestoreGeometry}" />
+            </Grid>
+          </Button>
+          <Button x:Name="CloseWindowButton" Classes="window-control close" ToolTip.Tip="关闭窗口"
+                  Click="Close_Click">
+            <Path Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center"
+                  VerticalAlignment="Center" Fill="{Binding #CloseWindowButton.Foreground}"
+                  Data="{StaticResource WindowCloseGeometry}" />
+          </Button>
+        </StackPanel>
+      </Grid>
+
+      <Grid Grid.Row="1" Margin="22,8,22,20"
+            RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="12">
+        <StackPanel Spacing="3">
+          <TextBlock Text="每日统计" FontSize="23" FontWeight="Bold" />
+          <TextBlock Text="只统计成功完成的翻译请求，最近 365 天的数据保存在本机。"
+                     FontSize="12" Foreground="#756B63" />
+        </StackPanel>
+
+        <Border Grid.Row="1" Padding="12" CornerRadius="12" Background="#FFFEFC"
+                BorderBrush="#EAE2D9" BorderThickness="1">
+          <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="10" VerticalAlignment="Center">
+            <StackPanel Spacing="4">
+              <TextBlock Text="开始日期" FontSize="11" Foreground="#756B63" />
+              <Border x:Name="StartDateCard" Width="176" Height="36" Padding="10,0"
+                      CornerRadius="9" Background="#F7F1EB" BorderBrush="#E7D8CA"
+                      BorderThickness="1" Cursor="Hand" ToolTip.Tip="点击输入日期，例如 2026/10/3"
+                      PointerPressed="StartDateCard_PointerPressed">
+                <Grid>
+                  <TextBlock x:Name="StartDateCardText" Text="2026/9/4" FontSize="14"
+                             FontWeight="SemiBold" Foreground="#493F38"
+                             VerticalAlignment="Center" />
+                  <TextBox x:Name="StartDateInputBox" Classes="date-input" IsVisible="False"
+                           LostFocus="DateInput_LostFocus" KeyDown="DateInput_KeyDown" />
+                </Grid>
+              </Border>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="4">
+              <TextBlock Text="结束日期" FontSize="11" Foreground="#756B63" />
+              <Border x:Name="EndDateCard" Width="176" Height="36" Padding="10,0"
+                      CornerRadius="9" Background="#F7F1EB" BorderBrush="#E7D8CA"
+                      BorderThickness="1" Cursor="Hand" ToolTip.Tip="点击输入日期，例如 2026/10/3"
+                      PointerPressed="EndDateCard_PointerPressed">
+                <Grid>
+                  <TextBlock x:Name="EndDateCardText" Text="2026/10/3" FontSize="14"
+                             FontWeight="SemiBold" Foreground="#493F38"
+                             VerticalAlignment="Center" />
+                  <TextBox x:Name="EndDateInputBox" Classes="date-input" IsVisible="False"
+                           LostFocus="DateInput_LostFocus" KeyDown="DateInput_KeyDown" />
+                </Grid>
+              </Border>
+            </StackPanel>
+            <Button Grid.Column="2" Content="查询" VerticalAlignment="Bottom" Click="Query_Click" />
+            <TextBlock x:Name="RangeStatusText" Grid.Column="3" Text="点击日期卡片可修改"
+                       FontSize="12" Foreground="#81766D" VerticalAlignment="Bottom"
+                       HorizontalAlignment="Right" Margin="0,0,2,9" />
+          </Grid>
+        </Border>
+
+        <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="12">
+          <Border Padding="15,12" CornerRadius="12" Background="#FFFEFC"
+                  BorderBrush="#EAE2D9" BorderThickness="1">
+            <StackPanel Spacing="3">
+              <TextBlock Text="翻译请求" FontSize="12" Foreground="#756B63" />
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <TextBlock x:Name="RequestTotalText" Text="0" FontSize="27"
+                           FontWeight="Bold" Foreground="#5489A6" />
+                <TextBlock Text="次" FontSize="13" Foreground="#756B63" VerticalAlignment="Bottom"
+                           Margin="0,0,0,5" />
+              </StackPanel>
+            </StackPanel>
+          </Border>
+          <Border Grid.Column="1" Padding="15,12" CornerRadius="12" Background="#FFFEFC"
+                  BorderBrush="#EAE2D9" BorderThickness="1">
+            <StackPanel Spacing="3">
+              <TextBlock Text="翻译请求字数" FontSize="12" Foreground="#756B63" />
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <TextBlock x:Name="UnitsTotalText" Text="0" FontSize="27"
+                           FontWeight="Bold" Foreground="#B65D3B" />
+                <TextBlock Text="字" FontSize="13" Foreground="#756B63" VerticalAlignment="Bottom"
+                           Margin="0,0,0,5" />
+              </StackPanel>
+            </StackPanel>
+          </Border>
+        </Grid>
+
+        <Border Grid.Row="3" Padding="14" CornerRadius="12" Background="#FFFEFC"
+                BorderBrush="#EAE2D9" BorderThickness="1">
+          <Grid RowDefinitions="Auto,*" RowSpacing="8">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="2">
+                <TextBlock Text="趋势" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock x:Name="ChartRangeText" Text="最近30天"
+                           FontSize="11" Foreground="#81766D" />
+              </StackPanel>
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="14"
+                          VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Ellipse Width="9" Height="9" Fill="#B65D3B" VerticalAlignment="Center" />
+                  <TextBlock Text="翻译字数" FontSize="11" Foreground="#655A52" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Ellipse Width="9" Height="9" Fill="#5489A6" VerticalAlignment="Center" />
+                  <TextBlock Text="请求次数" FontSize="11" Foreground="#655A52" />
+                </StackPanel>
+              </StackPanel>
+            </Grid>
+            <services:DailyUsageChart x:Name="StatisticsChart" Grid.Row="1" MinHeight="250" />
+          </Grid>
+        </Border>
+
+        <Border Grid.Row="4" Padding="11,9" CornerRadius="10" Background="#F8F1E9"
+                BorderBrush="#E9D8C8" BorderThickness="1">
+          <StackPanel Spacing="2">
+            <TextBlock Text="统计口径" FontSize="11" FontWeight="SemiBold" Foreground="#684B3C" />
+            <TextBlock Text="只计入成功完成的翻译请求，取消或失败不计；英语按单词计数，中文按汉字计数。这里的字数是发送给翻译接口的请求文本字数，不等于实际打字字数。"
+                       FontSize="11" Foreground="#756B63" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+      </Grid>
+    </Grid>
+  </Border>
+</Window>

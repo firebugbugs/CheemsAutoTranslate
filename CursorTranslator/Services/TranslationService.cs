@@ -13,6 +13,7 @@ public sealed class TranslationService
     private const int MaximumChunkLength = 3_000;
     private const int SentenceBoundarySearchRadius = 10;
     private static readonly HttpClient Client = new() { Timeout = Timeout.InfiniteTimeSpan };
+    private readonly TranslationHttpProfileService _httpProfileService = new();
 
     public async Task<string> TranslateAsync(
         AppSettings settings,
@@ -21,35 +22,49 @@ public sealed class TranslationService
         bool applyMaximumTranslationLimit = true)
     {
         if (!settings.IsConfigured)
-            throw new InvalidOperationException("请先配置 API 地址、模型名称和系统提示词。");
-        if (string.IsNullOrWhiteSpace(text))
-            throw new ArgumentException("待翻译内容不能为空。", nameof(text));
+            throw new InvalidOperationException(settings.TranslationProvider == TranslationProviderKind.HttpTranslation
+                ? "请先配置有效的 HTTP 翻译接口档案。"
+                : "请先配置 API 地址、模型名称和系统提示词。");
+        text = GetSubmittedText(settings, text, applyMaximumTranslationLimit);
 
-        if (applyMaximumTranslationLimit)
-        {
-            var maximumCharacters = Math.Clamp(
-                settings.MaximumTranslationCharacters,
-                AppSettings.MinimumMaximumTranslationCharacters,
-                AppSettings.MaximumMaximumTranslationCharacters);
-            text = KeepLastTranslationUnits(text, maximumCharacters);
-            if (string.IsNullOrWhiteSpace(text))
-                throw new ArgumentException("截取后的待翻译内容为空。", nameof(text));
-        }
-
-        var endpoint = new Uri(new Uri(settings.Endpoint.TrimEnd('/') + "/"), "chat/completions");
+        var aiEndpoint = settings.TranslationProvider == TranslationProviderKind.OpenAiCompatible
+            ? new Uri(new Uri(settings.Endpoint.TrimEnd('/') + "/"), "chat/completions")
+            : null;
         var chunks = SplitText(text, MaximumChunkLength);
         var translated = new System.Text.StringBuilder(text.Length);
 
         for (var i = 0; i < chunks.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var result = await TranslateChunkAsync(settings, endpoint, chunks[i].Text, cancellationToken);
+            var result = settings.TranslationProvider == TranslationProviderKind.HttpTranslation
+                ? await _httpProfileService.TranslateAsync(settings.ActiveTranslationHttpProfile!, chunks[i].Text, cancellationToken)
+                : await TranslateChunkAsync(settings, aiEndpoint!, chunks[i].Text, cancellationToken);
             translated.Append(result);
             if (i < chunks.Count - 1)
                 translated.Append(chunks[i].SeparatorAfter);
         }
 
         return translated.ToString();
+    }
+
+    public static string GetSubmittedText(
+        AppSettings settings,
+        string text,
+        bool applyMaximumTranslationLimit = true)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            throw new ArgumentException("待翻译内容不能为空。", nameof(text));
+
+        if (!applyMaximumTranslationLimit) return text;
+
+        var maximumCharacters = Math.Clamp(
+            settings.MaximumTranslationCharacters,
+            AppSettings.MinimumMaximumTranslationCharacters,
+            AppSettings.MaximumMaximumTranslationCharacters);
+        text = KeepLastTranslationUnits(text, maximumCharacters);
+        if (string.IsNullOrWhiteSpace(text))
+            throw new ArgumentException("截取后的待翻译内容为空。", nameof(text));
+        return text;
     }
 
     private static string KeepLastTranslationUnits(string text, int maximumUnits)
@@ -176,7 +191,7 @@ public sealed class TranslationService
 
     public Task<string> ExplainMeaningAsync(AppSettings settings, string selectedText, CancellationToken cancellationToken)
     {
-        if (!settings.IsConfigured)
+        if (!settings.IsAiConfigured)
             throw new InvalidOperationException("请先配置 API 地址、模型名称和系统提示词。");
         if (string.IsNullOrWhiteSpace(selectedText))
             throw new ArgumentException("请选择要询问 AI 的译文内容。", nameof(selectedText));

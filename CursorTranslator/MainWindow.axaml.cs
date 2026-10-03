@@ -16,10 +16,13 @@ public partial class MainWindow : Window
 {
     private readonly SettingsStore _settingsStore = new();
     private readonly CardAppearanceStore _cardAppearanceStore = new();
+    private readonly UsageStatisticsStore _usageStatisticsStore = new();
     private readonly TranslationService _translation = new();
     private readonly SpeechSynthesisService _speechSynthesis = new();
     private readonly StartupRegistrationService _startupRegistration = new();
     private readonly DispatcherTimer _autoSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private readonly DispatcherTimer _monitorDurationTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly Stopwatch _monitorDurationStopwatch = new();
     private readonly InputMonitor _monitor;
     private readonly TranslationOverlay _overlay;
     private AppSettings _settings;
@@ -28,11 +31,14 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _aiQuestionCancellation;
     private long _latestAiQuestion;
     private bool _isMonitoring;
+    private string _monitorStateLabel = "已退出";
     private bool _allowClose;
     private bool _updatingTriggerControls;
     private bool _normalizingMaximumTranslationCharacters;
     private bool _apiKeyVisible;
     private bool _speechApiKeyVisible;
+    private bool _updatingTranslationProviderControls;
+    private bool _updatingSpeechProviderControls = true;
     private long _translationGeneration;
     private long _speechGeneration;
     private CancellationTokenSource? _translationCancellation;
@@ -47,19 +53,39 @@ public partial class MainWindow : Window
         EndpointBox.Text = _settings.Endpoint;
         ModelBox.Text = _settings.Model;
         ApiKeyBox.Text = _settings.ApiKey;
+        HttpTranslationProfileComboBox.ItemsSource = _settings.TranslationHttpProfiles;
+        HttpTranslationProfileComboBox.SelectedItem = _settings.ActiveTranslationHttpProfile;
         SpeechEndpointBox.Text = _settings.SpeechEndpoint;
         SpeechModelBox.Text = _settings.SpeechModel;
         SpeechApiKeyBox.Text = _settings.SpeechApiKey;
         SpeechVoiceBox.Text = _settings.SpeechVoice;
+        HttpSpeechProfileComboBox.ItemsSource = _settings.SpeechHttpProfiles;
+        HttpSpeechProfileComboBox.SelectedItem = _settings.ActiveSpeechHttpProfile;
+        _updatingSpeechProviderControls = true;
+        EnableSpeechAiSwitch.IsChecked = _settings.SpeechProvider == SpeechProviderKind.OpenAiCompatible;
+        EnableSpeechHttpSwitch.IsChecked = _settings.SpeechProvider == SpeechProviderKind.GenericHttp;
+        SpeechProviderTabs.SelectedItem = _settings.SpeechProvider == SpeechProviderKind.GenericHttp
+            ? SpeechHttpProviderTab
+            : SpeechAiProviderTab;
+        UpdateSpeechProviderTabIndicators();
+        _updatingSpeechProviderControls = false;
         RealTimeSpeechCheckBox.IsChecked = _settings.RealTimeSpeechEnabled;
         SystemPromptBox.Text = _settings.SystemPrompt;
+        _updatingTranslationProviderControls = true;
+        EnableAiProviderSwitch.IsChecked = _settings.TranslationProvider == TranslationProviderKind.OpenAiCompatible;
+        EnableHttpProviderSwitch.IsChecked = _settings.TranslationProvider == TranslationProviderKind.HttpTranslation;
+        TranslationProviderTabs.SelectedItem = _settings.TranslationProvider == TranslationProviderKind.HttpTranslation
+            ? HttpProviderTab
+            : AiProviderTab;
+        UpdateTranslationProviderTabIndicators();
+        _updatingTranslationProviderControls = false;
         InitializeTriggerControls();
         MaximumTranslationCharactersBox.Text = Math.Clamp(
             _settings.MaximumTranslationCharacters,
             AppSettings.MinimumMaximumTranslationCharacters,
             AppSettings.MaximumMaximumTranslationCharacters).ToString(CultureInfo.InvariantCulture);
         UpdateStartupButton();
-        SetStatus(_settings.IsConfigured ? "就绪" : "设置模型");
+        SetStatus(_settings.IsConfigured ? "就绪" : "设置翻译接口");
         _cardAppearance = _cardAppearanceStore.Load();
         _overlay = new TranslationOverlay();
         _overlay.ApplyAppearance(_cardAppearance);
@@ -74,12 +100,17 @@ public partial class MainWindow : Window
         _monitor.InputCleared += OnInputCleared;
         _monitor.Diagnostic += message => Dispatcher.UIThread.Post(() =>
         {
-            MonitorStateText.Text = _isMonitoring ? "监控中" : "已退出";
+            if (message.Contains("异常", StringComparison.Ordinal)
+                || message.Contains("失败", StringComparison.Ordinal)
+                || message.Contains("错误", StringComparison.Ordinal))
+                AppLog.Warning("Input monitor", message);
+            UpdateMonitorStateText(_isMonitoring ? "监控中" : "已退出");
             SetStatus(message);
         });
         _monitor.Error += message => Dispatcher.UIThread.Post(() =>
         {
-            MonitorStateText.Text = "监控异常";
+            AppLog.Error("Input monitor", message);
+            UpdateMonitorStateText("监控异常");
             SetStatus(message);
         });
         Closed += (_, _) => StopMonitoring();
@@ -93,7 +124,9 @@ public partial class MainWindow : Window
             Hide();
         };
         _autoSaveTimer.Tick += AutoSaveTimer_Tick;
+        _monitorDurationTimer.Tick += (_, _) => UpdateMonitorStateText();
         AttachAutoSaveHandlers();
+        _ = InitializeUsageStatisticsStoreAsync();
     }
 
     public void ShowSettingsWindow()
@@ -139,10 +172,10 @@ public partial class MainWindow : Window
         }
 
         var popup = _aiAnswerWindow;
-        if (!_settings.IsConfigured)
+        if (!_settings.IsAiConfigured)
         {
             popup.ShowPending(_overlay);
-            popup.ShowError("请先配置模型地址、模型名称和系统提示词。");
+            popup.ShowError("AI 释义需要配置 AI 接口地址、模型名称和系统提示词。");
             return;
         }
 
@@ -162,6 +195,7 @@ public partial class MainWindow : Window
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception ex)
         {
+            AppLog.Error("AI explanation", "AI explanation request failed.", ex);
             if (requestId == Interlocked.Read(ref _latestAiQuestion)
                 && ReferenceEquals(_aiAnswerWindow, popup) && popup.IsVisible)
                 popup.ShowError(ex.Message);
@@ -205,10 +239,24 @@ public partial class MainWindow : Window
             Endpoint = EndpointBox.Text?.Trim() ?? "",
             Model = ModelBox.Text?.Trim() ?? "",
             ApiKey = ApiKeyBox.Text?.Trim() ?? "",
+            TranslationProvider = EnableHttpProviderSwitch.IsChecked == true
+                ? TranslationProviderKind.HttpTranslation
+                : TranslationProviderKind.OpenAiCompatible,
+            TranslationHttpProfiles = _settings.TranslationHttpProfiles,
+            ActiveTranslationHttpProfileId = (HttpTranslationProfileComboBox.SelectedItem as TranslationHttpProfile)?.Id ?? "",
             SpeechEndpoint = SpeechEndpointBox.Text?.Trim() ?? "",
+            SpeechProvider = EnableSpeechHttpSwitch.IsChecked == true
+                ? SpeechProviderKind.GenericHttp
+                : SpeechProviderKind.OpenAiCompatible,
             SpeechModel = SpeechModelBox.Text?.Trim() ?? "",
             SpeechApiKey = SpeechApiKeyBox.Text?.Trim() ?? "",
             SpeechVoice = SpeechVoiceBox.Text?.Trim() ?? "",
+            HttpSpeechEndpoint = "",
+            HttpSpeechModel = "",
+            HttpSpeechApiKey = "",
+            HttpSpeechVoice = "",
+            SpeechHttpProfiles = _settings.SpeechHttpProfiles,
+            ActiveSpeechHttpProfileId = (HttpSpeechProfileComboBox.SelectedItem as SpeechHttpProfile)?.Id ?? "",
             RealTimeSpeechEnabled = RealTimeSpeechCheckBox.IsChecked == true,
             SystemPrompt = SystemPromptBox.Text?.Trim() ?? "",
             TranslateOnTextChange = TranslateOnTextChangeCheckBox.IsChecked == true,
@@ -225,9 +273,11 @@ public partial class MainWindow : Window
         if (!hasValidMaximumCharacters)
             validationIssues.Add("最多翻译请输入 5 到 1000 之间的整数");
         if (_settings.RealTimeSpeechEnabled && !_settings.IsSpeechConfigured)
-            validationIssues.Add("实时语音请配置语音 API 地址、模型名称和音色");
+            validationIssues.Add(_settings.SpeechProvider == SpeechProviderKind.GenericHttp
+                ? "实时语音请配置有效的 HTTP 接口档案"
+                : "实时语音请配置语音 API 地址、模型名称和音色");
         SetStatus(validationIssues.Count == 0
-            ? "设置已自动保存"
+            ? (_settings.IsConfigured ? "设置已自动保存" : "设置已保存 · 当前接口待配置")
             : $"其他设置已自动保存；{string.Join("；", validationIssues)}。");
     }
 
@@ -236,10 +286,12 @@ public partial class MainWindow : Window
         EndpointBox.TextChanged += SettingsText_Changed;
         ModelBox.TextChanged += SettingsText_Changed;
         ApiKeyBox.TextChanged += SettingsText_Changed;
+        HttpTranslationProfileComboBox.SelectionChanged += HttpTranslationProfile_Changed;
         SpeechEndpointBox.TextChanged += SettingsText_Changed;
         SpeechModelBox.TextChanged += SettingsText_Changed;
         SpeechApiKeyBox.TextChanged += SettingsText_Changed;
         SpeechVoiceBox.TextChanged += SettingsText_Changed;
+        HttpSpeechProfileComboBox.SelectionChanged += HttpSpeechProfile_Changed;
         SystemPromptBox.TextChanged += SettingsText_Changed;
         InactivityDelaySecondsBox.TextChanged += SettingsText_Changed;
         MaximumTranslationCharactersBox.TextChanged += MaximumTranslationCharactersBox_TextChanged;
@@ -297,6 +349,46 @@ public partial class MainWindow : Window
     private void SettingsText_Changed(object? sender, TextChangedEventArgs e)
         => ScheduleAutoSave();
 
+    private void HttpSpeechProfile_Changed(object? sender, SelectionChangedEventArgs e)
+    {
+        ScheduleAutoSave();
+    }
+
+    private void HttpTranslationProfile_Changed(object? sender, SelectionChangedEventArgs e)
+        => ScheduleAutoSave();
+
+    private async void ManageTranslationHttpProfiles_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        SaveSettings();
+        var editor = new TranslationHttpProfilesWindow(
+            _settings.TranslationHttpProfiles,
+            _settings.ActiveTranslationHttpProfileId);
+        var saved = await editor.ShowDialog<bool>(this);
+        if (!saved) return;
+
+        _settings.TranslationHttpProfiles = editor.Profiles.Select(profile => profile.Copy()).ToList();
+        _settings.ActiveTranslationHttpProfileId = editor.SelectedProfileId;
+        HttpTranslationProfileComboBox.ItemsSource = null;
+        HttpTranslationProfileComboBox.ItemsSource = _settings.TranslationHttpProfiles;
+        HttpTranslationProfileComboBox.SelectedItem = _settings.ActiveTranslationHttpProfile;
+        SaveSettings();
+    }
+
+    private async void ManageSpeechHttpProfiles_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        SaveSettings();
+        var editor = new SpeechHttpProfilesWindow(_settings.SpeechHttpProfiles, _settings.ActiveSpeechHttpProfileId);
+        var saved = await editor.ShowDialog<bool>(this);
+        if (!saved) return;
+
+        _settings.SpeechHttpProfiles = editor.Profiles.Select(profile => profile.Copy()).ToList();
+        _settings.ActiveSpeechHttpProfileId = editor.SelectedProfileId;
+        HttpSpeechProfileComboBox.ItemsSource = null;
+        HttpSpeechProfileComboBox.ItemsSource = _settings.SpeechHttpProfiles;
+        HttpSpeechProfileComboBox.SelectedItem = _settings.ActiveSpeechHttpProfile;
+        SaveSettings();
+    }
+
     private void ScheduleAutoSave()
     {
         _autoSaveTimer.Stop();
@@ -317,6 +409,85 @@ public partial class MainWindow : Window
         Avalonia.Controls.ToolTip.SetTip(
             ApiKeyVisibilityButton,
             _apiKeyVisible ? "隐藏 API Key" : "显示 API Key");
+    }
+
+    private void TranslationProviderSwitch_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_updatingTranslationProviderControls) return;
+
+        var currentProvider = _settings.TranslationProvider;
+        var requestedProvider = sender == EnableHttpProviderSwitch
+            ? TranslationProviderKind.HttpTranslation
+            : TranslationProviderKind.OpenAiCompatible;
+        var requestedSwitch = requestedProvider == TranslationProviderKind.HttpTranslation
+            ? EnableHttpProviderSwitch
+            : EnableAiProviderSwitch;
+        var selectedProvider = requestedSwitch.IsChecked == true
+            ? requestedProvider
+            : currentProvider == requestedProvider
+                ? requestedProvider == TranslationProviderKind.HttpTranslation
+                    ? TranslationProviderKind.OpenAiCompatible
+                    : TranslationProviderKind.HttpTranslation
+                : currentProvider;
+
+        _updatingTranslationProviderControls = true;
+        EnableAiProviderSwitch.IsChecked = selectedProvider == TranslationProviderKind.OpenAiCompatible;
+        EnableHttpProviderSwitch.IsChecked = selectedProvider == TranslationProviderKind.HttpTranslation;
+        TranslationProviderTabs.SelectedItem = selectedProvider == TranslationProviderKind.HttpTranslation
+            ? HttpProviderTab
+            : AiProviderTab;
+        UpdateTranslationProviderTabIndicators();
+        _updatingTranslationProviderControls = false;
+
+        _autoSaveTimer.Stop();
+        SaveSettings();
+    }
+
+    private void UpdateTranslationProviderTabIndicators()
+    {
+        var httpTranslationSelected = EnableHttpProviderSwitch.IsChecked == true;
+        AiProviderCheckMark.IsVisible = !httpTranslationSelected;
+        HttpProviderCheckMark.IsVisible = httpTranslationSelected;
+        TestProviderLabel.Text = httpTranslationSelected ? "当前：HTTP 接入" : "当前：AI 接入";
+    }
+
+    private void SpeechProviderSwitch_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_updatingSpeechProviderControls) return;
+
+        var currentProvider = _settings.SpeechProvider;
+        var requestedProvider = sender == EnableSpeechHttpSwitch
+            ? SpeechProviderKind.GenericHttp
+            : SpeechProviderKind.OpenAiCompatible;
+        var requestedSwitch = requestedProvider == SpeechProviderKind.GenericHttp
+            ? EnableSpeechHttpSwitch
+            : EnableSpeechAiSwitch;
+        var selectedProvider = requestedSwitch.IsChecked == true
+            ? requestedProvider
+            : currentProvider == requestedProvider
+                ? requestedProvider == SpeechProviderKind.GenericHttp
+                    ? SpeechProviderKind.OpenAiCompatible
+                    : SpeechProviderKind.GenericHttp
+                : currentProvider;
+
+        _updatingSpeechProviderControls = true;
+        EnableSpeechAiSwitch.IsChecked = selectedProvider == SpeechProviderKind.OpenAiCompatible;
+        EnableSpeechHttpSwitch.IsChecked = selectedProvider == SpeechProviderKind.GenericHttp;
+        SpeechProviderTabs.SelectedItem = selectedProvider == SpeechProviderKind.GenericHttp
+            ? SpeechHttpProviderTab
+            : SpeechAiProviderTab;
+        UpdateSpeechProviderTabIndicators();
+        _updatingSpeechProviderControls = false;
+
+        _autoSaveTimer.Stop();
+        SaveSettings();
+    }
+
+    private void UpdateSpeechProviderTabIndicators()
+    {
+        var httpSpeechSelected = EnableSpeechHttpSwitch.IsChecked == true;
+        SpeechAiProviderCheckMark.IsVisible = !httpSpeechSelected;
+        SpeechHttpProviderCheckMark.IsVisible = httpSpeechSelected;
     }
 
     private void ToggleSpeechApiKeyVisibility_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -347,6 +518,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            AppLog.Error("Startup registration", "Failed to update Windows startup registration.", ex);
             UpdateStartupButton();
             SetStatus($"启动项设置失败：{ex.Message}");
         }
@@ -384,23 +556,7 @@ public partial class MainWindow : Window
     }
 
     private void WindowSurface_PointerPressed(object? sender, PointerPressedEventArgs e)
-    {
-        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
-            || e.Source is not Avalonia.Controls.Control source
-            || IsInteractiveControl(source))
-            return;
-
-        BeginMoveDrag(e);
-        e.Handled = true;
-    }
-
-    private static bool IsInteractiveControl(Avalonia.Controls.Control source)
-        => source.FindAncestorOfType<Avalonia.Controls.Button>(includeSelf: true) is not null
-            || source.FindAncestorOfType<ToggleButton>(includeSelf: true) is not null
-            || source.FindAncestorOfType<Avalonia.Controls.TextBox>(includeSelf: true) is not null
-            || source.FindAncestorOfType<Avalonia.Controls.ComboBox>(includeSelf: true) is not null
-            || source.FindAncestorOfType<Slider>(includeSelf: true) is not null
-            || source.FindAncestorOfType<Avalonia.Controls.NumericUpDown>(includeSelf: true) is not null;
+        => WindowChrome.BeginMoveDrag(this, e);
 
     private void MinimizeWindow_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => WindowState = Avalonia.Controls.WindowState.Minimized;
@@ -423,6 +579,33 @@ public partial class MainWindow : Window
 
     private async void ShowAbout_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => await new AboutWindow().ShowDialog(this);
+
+    private async void ShowStatistics_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => await new DailyStatisticsWindow(_usageStatisticsStore).ShowDialog(this);
+
+    private async Task InitializeUsageStatisticsStoreAsync()
+    {
+        try
+        {
+            await _usageStatisticsStore.InitializeAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Usage statistics", "Failed to initialize the statistics database.", ex);
+        }
+    }
+
+    private async Task RecordCompletedTranslationAsync(string submittedText, TranslationProviderKind provider)
+    {
+        try
+        {
+            await _usageStatisticsStore.RecordCompletedTranslationAsync(submittedText, provider);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Usage statistics", "Failed to record a completed translation.", ex);
+        }
+    }
 
     private void InitializeTriggerControls()
     {
@@ -498,6 +681,10 @@ public partial class MainWindow : Window
     private async void TranslateTest_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         SaveSettings();
+        var settings = _settings;
+        var providerName = settings.TranslationProvider == TranslationProviderKind.HttpTranslation
+            ? "HTTP"
+            : "AI";
         var text = TestInputBox.Text;
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -509,20 +696,27 @@ public partial class MainWindow : Window
         var stopwatch = Stopwatch.StartNew();
         try
         {
+            var submittedText = TranslationService.GetSubmittedText(
+                settings,
+                text,
+                applyMaximumTranslationLimit: false);
             var translated = await _translation.TranslateAsync(
-                _settings,
+                settings,
                 text,
                 CancellationToken.None,
                 applyMaximumTranslationLimit: false);
+            if (!string.IsNullOrWhiteSpace(translated))
+                await RecordCompletedTranslationAsync(submittedText, settings.TranslationProvider);
             TestResultText.Text = translated;
             TestSpeakButton.IsEnabled = !string.IsNullOrWhiteSpace(translated);
             stopwatch.Stop();
-            SetStatus($"试译完成 · AI计算耗时：{stopwatch.Elapsed.TotalMilliseconds:F0} ms");
+            SetStatus($"试译完成 · {providerName} 接口 · {stopwatch.Elapsed.TotalMilliseconds:F0} ms");
             if (RealTimeSpeechCheckBox.IsChecked == true)
                 StartSpeechPlayback(translated);
         }
         catch (Exception ex)
         {
+            AppLog.Error("Translation test", "Test translation request failed.", ex);
             SetStatus($"翻译失败：{ex.Message}");
         }
         finally
@@ -544,17 +738,40 @@ public partial class MainWindow : Window
         SaveSettings();
         _isMonitoring = true;
         _monitor.Start();
-        MonitorStateText.Text = "监控中";
-        SetStatus(_settings.IsConfigured ? "就绪" : "设置模型");
+        AppLog.Info("Input monitor", "Input monitoring started.");
+        _monitorDurationStopwatch.Restart();
+        _monitorDurationTimer.Start();
+        UpdateMonitorStateText("监控中");
+        SetStatus(_settings.IsConfigured ? "就绪" : "设置翻译接口");
     }
 
     private void StopMonitoring()
     {
+        var wasMonitoring = _isMonitoring;
         _isMonitoring = false;
+        _monitorDurationTimer.Stop();
+        _monitorDurationStopwatch.Reset();
         CancelTranslationQueue();
         _monitor.Stop();
+        if (wasMonitoring)
+            AppLog.Info("Input monitor", "Input monitoring stopped.");
         _overlay.HideOverlay();
-        MonitorStateText.Text = "已退出";
+        UpdateMonitorStateText("已退出");
+    }
+
+    private void UpdateMonitorStateText(string? stateOverride = null)
+    {
+        if (stateOverride is not null)
+            _monitorStateLabel = stateOverride;
+
+        if (!_isMonitoring)
+        {
+            MonitorStateText.Text = "已退出";
+            return;
+        }
+
+        var elapsed = _monitorDurationStopwatch.Elapsed;
+        MonitorStateText.Text = $"{_monitorStateLabel} · {(long)elapsed.TotalHours:00}:{elapsed.Minutes:00}:{elapsed.Seconds:00}";
     }
 
     private void OnSpeechRequested(string text)
@@ -566,13 +783,24 @@ public partial class MainWindow : Window
         var settings = new AppSettings
         {
             SpeechEndpoint = SpeechEndpointBox.Text?.Trim() ?? "",
+            SpeechProvider = EnableSpeechHttpSwitch.IsChecked == true
+                ? SpeechProviderKind.GenericHttp
+                : SpeechProviderKind.OpenAiCompatible,
             SpeechModel = SpeechModelBox.Text?.Trim() ?? "",
             SpeechApiKey = SpeechApiKeyBox.Text?.Trim() ?? "",
-            SpeechVoice = SpeechVoiceBox.Text?.Trim() ?? ""
+            SpeechVoice = SpeechVoiceBox.Text?.Trim() ?? "",
+            HttpSpeechEndpoint = "",
+            HttpSpeechModel = "",
+            HttpSpeechApiKey = "",
+            HttpSpeechVoice = "",
+            SpeechHttpProfiles = _settings.SpeechHttpProfiles,
+            ActiveSpeechHttpProfileId = (HttpSpeechProfileComboBox.SelectedItem as SpeechHttpProfile)?.Id ?? ""
         };
         if (!settings.IsSpeechConfigured)
         {
-            SetStatus("请先配置语音模型地址、模型名称和音色");
+            SetStatus(settings.SpeechProvider == SpeechProviderKind.GenericHttp
+                ? "请先配置有效的通用 HTTP 语音接口档案"
+                : "请先配置语音模型地址、模型名称和音色");
             return;
         }
 
@@ -595,6 +823,7 @@ public partial class MainWindow : Window
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception ex)
         {
+            AppLog.Error("Speech synthesis", "Speech synthesis or playback failed.", ex);
             if (generation == Interlocked.Read(ref _speechGeneration))
                 Dispatcher.UIThread.Post(() =>
                 {
@@ -639,7 +868,7 @@ public partial class MainWindow : Window
     {
         if (!_settings.IsConfigured)
         {
-            SetStatus("请配置模型连接");
+            SetStatus("请配置当前翻译接口");
             return;
         }
 
@@ -683,13 +912,23 @@ public partial class MainWindow : Window
                 var stopwatch = Stopwatch.StartNew();
                 try
                 {
-                    var translated = await _translation.TranslateAsync(_settings, text.Text, cancellationToken);
+                    var translationSettings = _settings;
+                    var submittedText = TranslationService.GetSubmittedText(translationSettings, text.Text);
+                    var translated = await _translation.TranslateAsync(translationSettings, text.Text, cancellationToken);
                     stopwatch.Stop();
+                    var isCurrentRequest = generation == Interlocked.Read(ref _translationGeneration)
+                        && _queuedTranslation is null
+                        && _isMonitoring
+                        && !cancellationToken.IsCancellationRequested;
+                    if (isCurrentRequest && !string.IsNullOrWhiteSpace(translated))
+                        await RecordCompletedTranslationAsync(submittedText, translationSettings.TranslationProvider);
+
                     if (generation == Interlocked.Read(ref _translationGeneration)
-                        && _queuedTranslation is null && _isMonitoring)
+                        && _queuedTranslation is null && _isMonitoring
+                        && !cancellationToken.IsCancellationRequested)
                     {
                         _overlay.ShowAt(text.Bounds, translated);
-                        SetStatus($"翻译完成 · AI计算耗时：{stopwatch.Elapsed.TotalMilliseconds:F0} ms");
+                        SetStatus($"翻译完成 · 接口耗时：{stopwatch.Elapsed.TotalMilliseconds:F0} ms");
                         if (RealTimeSpeechCheckBox.IsChecked == true)
                             StartSpeechPlayback(translated);
                     }
@@ -700,6 +939,7 @@ public partial class MainWindow : Window
                 }
                 catch (Exception ex)
                 {
+                    AppLog.Error("Translation monitor", "Monitored translation request failed.", ex);
                     if (generation == Interlocked.Read(ref _translationGeneration)
                         && _queuedTranslation is null && _isMonitoring)
                         SetStatus($"翻译失败：{ex.Message}");
