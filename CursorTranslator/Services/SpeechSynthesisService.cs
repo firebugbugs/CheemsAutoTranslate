@@ -12,6 +12,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using CursorTranslator.Models;
+using NAudio.Wave;
 
 namespace CursorTranslator.Services;
 
@@ -22,6 +23,8 @@ public sealed class SpeechSynthesisService : IDisposable
     private SoundPlayer? _player;
     private MemoryStream? _audioStream;
     private System.Windows.Media.MediaPlayer? _mediaPlayer;
+    private WasapiPlayer? _streamingMp3Player;
+    private MediaFoundationReader? _streamingMp3Reader;
     private string? _temporaryAudioPath;
     private long _generation;
     private bool _disposed;
@@ -45,6 +48,13 @@ public sealed class SpeechSynthesisService : IDisposable
         timeout.CancelAfter(TimeSpan.FromSeconds(configuredTimeout));
         try
         {
+            if (settings.SpeechProvider == SpeechProviderKind.GenericHttp
+                && TryCreateDirectMp3Uri(settings.ActiveSpeechHttpProfile!, text, out var directMp3Uri))
+            {
+                await RequestAndPlayMp3Async(directMp3Uri, generation, timeout.Token);
+                return;
+            }
+
             var result = settings.SpeechProvider == SpeechProviderKind.GenericHttp
                 ? await SynthesizeWithProfileAsync(settings.ActiveSpeechHttpProfile!, text, timeout.Token)
                 : await SynthesizeOpenAiCompatibleAsync(settings, text, timeout.Token);
@@ -249,6 +259,12 @@ public sealed class SpeechSynthesisService : IDisposable
         Uri responseUri,
         CancellationToken cancellationToken)
     {
+        var audioUri = GetHtmlAudioSourceUri(htmlBytes, responseUri);
+        return await DownloadAudioAsync(audioUri.AbsoluteUri, cancellationToken);
+    }
+
+    private static Uri GetHtmlAudioSourceUri(byte[] htmlBytes, Uri responseUri)
+    {
         var html = Encoding.UTF8.GetString(htmlBytes);
         var match = Regex.Match(html,
             "<(?:source|audio)\\b[^>]*\\bsrc\\s*=\\s*(?:\"(?<url>[^\"]*)\"|'(?<url>[^']*)'|(?<url>[^\\s>]+))",
@@ -261,7 +277,7 @@ public sealed class SpeechSynthesisService : IDisposable
             || (audioUri.Scheme != Uri.UriSchemeHttp && audioUri.Scheme != Uri.UriSchemeHttps))
             throw new InvalidOperationException("语音接口返回了 HTML 播放页，但其中的音频地址不是有效的 HTTP 或 HTTPS 地址。");
 
-        return await DownloadAudioAsync(audioUri.AbsoluteUri, cancellationToken);
+        return audioUri;
     }
 
     private static async Task<byte[]> DownloadAudioAsync(string url, CancellationToken cancellationToken)
@@ -300,6 +316,93 @@ public sealed class SpeechSynthesisService : IDisposable
         var path = Path.Combine(Path.GetTempPath(), $"cheems-tts-{Guid.NewGuid():N}.mp3");
         await File.WriteAllBytesAsync(path, audio, cancellationToken);
         var player = new System.Windows.Media.MediaPlayer();
+        await OpenAndPlayMp3Async(player, new Uri(path), path, generation, cancellationToken);
+    }
+
+    private async Task RequestAndPlayMp3Async(Uri requestUri, long generation, CancellationToken cancellationToken)
+    {
+        using var response = await Client.GetAsync(requestUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        var responseBytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        EnsureSuccess(response, responseBytes);
+        if (responseBytes.Length == 0)
+            throw new InvalidOperationException("语音服务返回了空音频。");
+
+        var effectiveUri = response.RequestMessage?.RequestUri ?? requestUri;
+        if (LooksLikeHtmlAudioPage(responseBytes))
+        {
+            var audioUri = GetHtmlAudioSourceUri(responseBytes, effectiveUri);
+            await PlayMp3UriAsync(audioUri, generation, cancellationToken);
+            return;
+        }
+
+        // For endpoints that return MP3 bytes directly, keep using the local-file
+        // player so we do not issue the synthesis request a second time.
+        await PlayMp3Async(responseBytes, generation, cancellationToken);
+    }
+
+    private async Task PlayMp3UriAsync(Uri audioUri, long generation, CancellationToken cancellationToken)
+    {
+        var readerTask = Task.Run(() => new MediaFoundationReader(audioUri.AbsoluteUri));
+        MediaFoundationReader? reader = null;
+        WasapiPlayer? player = null;
+        try
+        {
+            try
+            {
+                reader = await readerTask.WaitAsync(cancellationToken);
+            }
+            catch
+            {
+                _ = readerTask.ContinueWith(
+                    static task =>
+                    {
+                        if (task.Status == TaskStatus.RanToCompletion)
+                            task.Result.Dispose();
+                    },
+                    CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+                throw;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            player = await new WasapiPlayerBuilder().BuildAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            player.Init(reader);
+            player.PlaybackStopped += (_, args) =>
+            {
+                if (args.Exception is not null)
+                    AppLog.Error("Speech playback", "Network MP3 playback stopped with an error.", args.Exception);
+            };
+
+            lock (_playbackLock)
+            {
+                if (_disposed || generation != Interlocked.Read(ref _generation))
+                    return;
+
+                StopPlaybackLocked();
+                _streamingMp3Reader = reader;
+                _streamingMp3Player = player;
+                reader = null;
+                player = null;
+                _streamingMp3Player.Play();
+            }
+        }
+        finally
+        {
+            if (player is not null)
+                await player.DisposeAsync();
+            reader?.Dispose();
+        }
+    }
+
+    private async Task OpenAndPlayMp3Async(
+        System.Windows.Media.MediaPlayer player,
+        Uri audioUri,
+        string? temporaryPath,
+        long generation,
+        CancellationToken cancellationToken)
+    {
         var opened = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         EventHandler openedHandler = (_, _) => opened.TrySetResult();
         EventHandler<System.Windows.Media.ExceptionEventArgs> failedHandler = (_, args) =>
@@ -308,7 +411,7 @@ public sealed class SpeechSynthesisService : IDisposable
         player.MediaFailed += failedHandler;
         try
         {
-            player.Open(new Uri(path));
+            player.Open(audioUri);
             await opened.Task.WaitAsync(cancellationToken);
             player.MediaOpened -= openedHandler;
             player.MediaFailed -= failedHandler;
@@ -318,13 +421,13 @@ public sealed class SpeechSynthesisService : IDisposable
                 if (_disposed || generation != Interlocked.Read(ref _generation))
                 {
                     player.Close();
-                    TryDelete(path);
+                    if (temporaryPath is not null) TryDelete(temporaryPath);
                     return;
                 }
 
                 StopPlaybackLocked();
                 _mediaPlayer = player;
-                _temporaryAudioPath = path;
+                _temporaryAudioPath = temporaryPath;
                 player.Play();
             }
         }
@@ -333,9 +436,52 @@ public sealed class SpeechSynthesisService : IDisposable
             player.MediaOpened -= openedHandler;
             player.MediaFailed -= failedHandler;
             player.Close();
-            TryDelete(path);
+            if (temporaryPath is not null) TryDelete(temporaryPath);
             throw;
         }
+    }
+
+    private static bool TryCreateDirectMp3Uri(SpeechHttpProfile profile, string text, out Uri uri)
+    {
+        uri = null!;
+        ValidateProfile(profile);
+        if (!profile.Workflow.Type.Equals("Sync", StringComparison.OrdinalIgnoreCase)
+            || !profile.Request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase)
+            || profile.Request.Body is not null
+            || profile.Request.Headers.Count != 0
+            || !profile.Response.Type.Equals("RawAudio", StringComparison.OrdinalIgnoreCase)
+            || !profile.Response.Format.Equals("Mp3", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var authType = profile.Auth.Type.Trim();
+        if (authType.Equals("ApiKeyQuery", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(profile.ApiKey) || string.IsNullOrWhiteSpace(profile.Auth.QueryName))
+                return false;
+        }
+        else if (!authType.Equals("None", StringComparison.OrdinalIgnoreCase))
+        {
+            // Media Foundation URL playback cannot add custom authentication headers.
+            return false;
+        }
+
+        var values = CreateTemplateValues(profile, text, "");
+        values["dateRfc1123"] = DateTimeOffset.UtcNow.ToString("r", CultureInfo.InvariantCulture);
+        values["dateIso8601"] = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+        values["method"] = "GET";
+        var url = HttpProfileRequestSender.Expand(profile.Request.Url, values);
+        var query = new Dictionary<string, string>(profile.Request.Query, StringComparer.OrdinalIgnoreCase);
+        foreach (var item in query.ToArray()) query[item.Key] = HttpProfileRequestSender.Expand(item.Value, values);
+        if (authType.Equals("ApiKeyQuery", StringComparison.OrdinalIgnoreCase))
+            query[profile.Auth.QueryName] = profile.ApiKey;
+
+        url = AddQuery(url, query);
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var parsedUri)
+            || (parsedUri.Scheme != Uri.UriSchemeHttp && parsedUri.Scheme != Uri.UriSchemeHttps))
+            return false;
+
+        uri = parsedUri;
+        return true;
     }
 
     private static Dictionary<string, string> CreateTemplateValues(SpeechHttpProfile profile, string text, string taskId)
@@ -597,8 +743,32 @@ public sealed class SpeechSynthesisService : IDisposable
         _audioStream?.Dispose();
         _audioStream = null;
         _mediaPlayer = null;
+        var streamingPlayer = _streamingMp3Player;
+        var streamingReader = _streamingMp3Reader;
+        _streamingMp3Player = null;
+        _streamingMp3Reader = null;
+        if (streamingPlayer is not null)
+            _ = DisposeStreamingMp3Async(streamingPlayer, streamingReader);
+        else
+            streamingReader?.Dispose();
         if (_temporaryAudioPath is not null) TryDelete(_temporaryAudioPath);
         _temporaryAudioPath = null;
+    }
+
+    private static async Task DisposeStreamingMp3Async(WasapiPlayer player, MediaFoundationReader? reader)
+    {
+        try
+        {
+            await player.DisposeAsync();
+        }
+        catch (Exception)
+        {
+            // The audio device may already have stopped or been removed.
+        }
+        finally
+        {
+            reader?.Dispose();
+        }
     }
 
     private static void TryDelete(string path)
