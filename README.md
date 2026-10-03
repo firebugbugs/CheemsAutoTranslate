@@ -7,9 +7,13 @@
 [![GitHub仓库](https://img.shields.io/badge/GitHub-%E4%BB%93%E5%BA%93-181717?logo=github)](https://github.com/firebugbugs/CheemsAutoTranslate)
 [![Gitee仓库](https://img.shields.io/badge/Gitee-%E4%BB%93%E5%BA%93-C71D23?logo=gitee)](https://gitee.com/unbengable/cheems-auto-translate)
 
+![软件效果](./docs/images/软件效果.png)
+
 ![首页](./docs/images/首页.png)
 
-![软件效果](./docs/images/软件效果.png)
+> 📣 **软件功能建议可以加QQ群联系群主，更新软件在软件内就能完成，不需要再到项目页面来。**
+
+![自动更新](./docs/images/自动更新.png)
 
 </div>
 
