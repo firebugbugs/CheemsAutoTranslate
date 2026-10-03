@@ -7,6 +7,8 @@
 
 ![首页](./docs/images/首页.png)
 
+![软件效果](./docs/images/软件效果.png)
+
 </div>
 
 ## 简介
