@@ -7,6 +7,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -288,8 +289,15 @@ public sealed class SpeechSynthesisService : IDisposable
     {
         var audioUri = GetHtmlAudioSourceUri(htmlBytes, responseUri);
         AppLog.Info("Speech synthesis",
-            $"Resolved audio source; endpoint={HttpProfileRequestSender.GetSafeEndpoint(audioUri)}.");
-        return await DownloadAudioAsync(audioUri.AbsoluteUri, cancellationToken);
+            $"Resolved audio source; endpoint={HttpProfileRequestSender.GetSafeEndpoint(audioUri)}; " +
+            $"refererOrigin={HttpProfileRequestSender.GetSafeEndpoint(responseUri)}.");
+        var audio = await DownloadAudioAsync(audioUri.AbsoluteUri, cancellationToken, responseUri);
+        if (IsJsonResponse(audio, null))
+            throw new InvalidOperationException("音频源站返回了 JSON 错误响应，而不是 MP3 音频。");
+        if (!LooksLikeMp3(audio))
+            throw new InvalidOperationException("音频源站返回的数据不是有效的 MP3 音频。");
+        AppLog.Info("Speech synthesis", $"Validated downloaded MP3 audio; audioBytes={audio.Length}.");
+        return audio;
     }
 
     private static Uri GetHtmlAudioSourceUri(byte[] htmlBytes, Uri responseUri)
@@ -309,18 +317,56 @@ public sealed class SpeechSynthesisService : IDisposable
         return audioUri;
     }
 
-    private static async Task<byte[]> DownloadAudioAsync(string url, CancellationToken cancellationToken)
+    private static async Task<byte[]> DownloadAudioAsync(
+        string url,
+        CancellationToken cancellationToken,
+        Uri? referer = null)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
             || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
             throw new InvalidOperationException("音频 URL 必须是有效的 HTTP 或 HTTPS 地址。");
-        return (await GetSpeechHttpResponseAsync(uri, cancellationToken, "Generated audio download")).Bytes;
+
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return (await GetSpeechHttpResponseAsync(
+                    uri, cancellationToken, "Generated audio download", referer)).Bytes;
+            }
+            catch (HttpRequestException exception) when (attempt == 1
+                && !cancellationToken.IsCancellationRequested
+                && IsConnectionReset(exception))
+            {
+                AppLog.Warning("Speech HTTP",
+                    $"Audio source connection was reset; retrying once; endpoint={HttpProfileRequestSender.GetSafeEndpoint(uri)}.",
+                    exception);
+                await Task.Delay(TimeSpan.FromMilliseconds(350), cancellationToken);
+            }
+            catch (HttpRequestException exception) when (IsConnectionReset(exception))
+            {
+                throw new InvalidOperationException(
+                    "下载语音文件失败：音频源站主动断开了连接。请检查当前网络、代理或防火墙是否能访问该音频服务。", exception);
+            }
+        }
+    }
+
+    private static bool IsConnectionReset(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is SocketException socketException
+                && socketException.SocketErrorCode is SocketError.ConnectionReset or SocketError.ConnectionAborted)
+                return true;
+        }
+
+        return false;
     }
 
     private static async Task<ProfileResponseData> GetSpeechHttpResponseAsync(
         Uri uri,
         CancellationToken cancellationToken,
-        string operation)
+        string operation,
+        Uri? referer = null)
     {
         var endpoint = HttpProfileRequestSender.GetSafeEndpoint(uri);
         var stopwatch = Stopwatch.StartNew();
@@ -329,7 +375,17 @@ public sealed class SpeechSynthesisService : IDisposable
         HttpResponseMessage response;
         try
         {
-            response = await Client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            if (referer is not null)
+            {
+                // The provider returns a browser-style audio page whose CDN may apply hotlink checks.
+                // Send only the page origin, never its query string (which may contain text or credentials).
+                request.Headers.UserAgent.ParseAdd(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+                request.Headers.Referrer = new Uri(referer.GetLeftPart(UriPartial.Authority) + "/");
+            }
+            response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -379,7 +435,7 @@ public sealed class SpeechSynthesisService : IDisposable
             AppLog.Info("Speech HTTP",
                 $"{operation} completed; endpoint={effectiveEndpoint}; responseBytes={bytes.Length}; " +
                 $"elapsedMs={stopwatch.Elapsed.TotalMilliseconds:F0}.");
-            return new ProfileResponseData(bytes, effectiveUri);
+            return new ProfileResponseData(bytes, effectiveUri, response.Content.Headers.ContentType?.MediaType);
         }
     }
 
@@ -422,14 +478,52 @@ public sealed class SpeechSynthesisService : IDisposable
         var effectiveUri = response.EffectiveUri;
         if (LooksLikeHtmlAudioPage(responseBytes))
         {
-            var audioUri = GetHtmlAudioSourceUri(responseBytes, effectiveUri);
-            await PlayMp3UriAsync(audioUri, generation, cancellationToken);
+            AppLog.Info("Speech playback",
+                "The synthesis endpoint returned an HTML player page; downloading its audio source with page-origin headers.");
+            var audio = await DownloadHtmlAudioSourceAsync(responseBytes, effectiveUri, cancellationToken);
+            await PlayMp3Async(audio, generation, cancellationToken);
             return;
+        }
+
+        var contentType = response.ContentType ?? "(未提供)";
+        if (IsJsonResponse(responseBytes, response.ContentType))
+        {
+            AppLog.Warning("Speech synthesis",
+                $"Expected MP3 bytes but received a JSON response; endpoint={HttpProfileRequestSender.GetSafeEndpoint(effectiveUri)}; " +
+                $"contentType={contentType}; responseBytes={responseBytes.Length}.");
+            throw new InvalidOperationException(
+                "语音接口返回了 JSON 响应而不是 MP3 音频。请检查接口参数、API Key、额度或服务端状态。");
+        }
+
+        if (!LooksLikeMp3(responseBytes))
+        {
+            AppLog.Warning("Speech synthesis",
+                $"Expected MP3 bytes but response does not have an MP3 signature; endpoint={HttpProfileRequestSender.GetSafeEndpoint(effectiveUri)}; " +
+                $"contentType={contentType}; responseBytes={responseBytes.Length}.");
+            throw new InvalidOperationException(
+                $"语音接口没有返回有效的 MP3 音频（Content-Type: {contentType}）。请检查接口响应格式和服务端状态。");
         }
 
         // For endpoints that return MP3 bytes directly, keep using the local-file
         // player so we do not issue the synthesis request a second time.
         await PlayMp3Async(responseBytes, generation, cancellationToken);
+    }
+
+    private static bool IsJsonResponse(byte[] bytes, string? contentType)
+    {
+        if (contentType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true) return true;
+        var prefix = Encoding.UTF8.GetString(bytes, 0, Math.Min(bytes.Length, 128))
+            .TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
+        return prefix.StartsWith('{') || prefix.StartsWith('[');
+    }
+
+    private static bool LooksLikeMp3(byte[] bytes)
+    {
+        if (bytes.Length >= 3 && bytes[0] == (byte)'I' && bytes[1] == (byte)'D' && bytes[2] == (byte)'3')
+            return true;
+
+        // MPEG audio frames start with an 11-bit sync word; ID3 headers are optional.
+        return bytes.Length >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0;
     }
 
     private async Task PlayMp3UriAsync(Uri audioUri, long generation, CancellationToken cancellationToken)
@@ -898,5 +992,5 @@ public sealed class SpeechSynthesisService : IDisposable
     }
 
     private sealed record AudioResult(byte[] Bytes, string Format, int SampleRate, int Channels, int BitsPerSample);
-    private sealed record ProfileResponseData(byte[] Bytes, Uri EffectiveUri);
+    private sealed record ProfileResponseData(byte[] Bytes, Uri EffectiveUri, string? ContentType = null);
 }
