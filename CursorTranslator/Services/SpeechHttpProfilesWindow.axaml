@@ -169,7 +169,7 @@
                       <Path Data="M 3,4 L 13,4 M 5,4 L 5,13 L 11,13 L 11,4 M 6,4 L 6,2 L 10,2 L 10,4 M 7,6 L 7,11 M 9,6 L 9,11"
                             Stroke="#A95032" StrokeThickness="1.4" Fill="Transparent" />
                     </Button>
-                    <TextBlock Grid.Row="1" Text="{Binding Request.Method}" FontSize="10"
+                    <TextBlock Grid.Row="1" Text="{Binding ProtocolDisplay}" FontSize="10"
                                Foreground="#81766D" VerticalAlignment="Center" />
                     <Border Grid.Row="1" Grid.Column="1" Padding="6,2" CornerRadius="6"
                             Background="#F3EEE8" VerticalAlignment="Center">
@@ -201,7 +201,11 @@
                           <ComboBoxItem Content="通用 HTTP · POST JSON / WAV" Tag="GenericPost" />
                           <ComboBoxItem Content="通用 HTTP · GET 参数 / JSON 音频" Tag="GenericGet" />
                           <ComboBoxItem Content="合我意预设 · GET / MP3" Tag="Hewoyi" />
+                          <ComboBoxItem Content="Microsoft Edge TTS · 免费神经语音" Tag="EdgeTts" />
                         </ComboBox>
+                        <TextBlock x:Name="EdgeTtsNoticeText"
+                                   Text="Edge TTS 使用内置在线语音协议，无需 API Key；下方 HTTP 地址、请求方式和鉴权设置不参与请求。可在音色栏填写 Edge 音色 ID。"
+                                   FontSize="11" Foreground="#756B63" TextWrapping="Wrap" IsVisible="False" />
                     </StackPanel>
                   </Border>
 

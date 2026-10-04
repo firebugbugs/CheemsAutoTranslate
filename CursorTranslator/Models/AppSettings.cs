@@ -75,8 +75,10 @@ public sealed class AppSettings
 
     public bool IsSpeechConfigured => SpeechProvider == SpeechProviderKind.GenericHttp
         ? ActiveSpeechHttpProfile is { } profile
-            && Uri.TryCreate(profile.Request.Url, UriKind.Absolute, out var httpSpeechUri)
-            && (httpSpeechUri.Scheme == Uri.UriSchemeHttp || httpSpeechUri.Scheme == Uri.UriSchemeHttps)
+            && (profile.IsEdgeTts
+                ? !string.IsNullOrWhiteSpace(profile.Voice)
+                : Uri.TryCreate(profile.Request.Url, UriKind.Absolute, out var httpSpeechUri)
+                    && (httpSpeechUri.Scheme == Uri.UriSchemeHttp || httpSpeechUri.Scheme == Uri.UriSchemeHttps))
         : Uri.TryCreate(SpeechEndpoint, UriKind.Absolute, out var speechUri)
             && (speechUri.Scheme == Uri.UriSchemeHttp || speechUri.Scheme == Uri.UriSchemeHttps)
             && !string.IsNullOrWhiteSpace(SpeechModel)

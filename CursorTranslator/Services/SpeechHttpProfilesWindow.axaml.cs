@@ -117,6 +117,7 @@ public partial class SpeechHttpProfilesWindow : Window
     private void LoadBasicFields(SpeechHttpProfile profile)
     {
         ProfileNameBox.Text = profile.Name;
+        EdgeTtsNoticeText.IsVisible = profile.IsEdgeTts;
         EndpointBox.Text = profile.Request.Url;
         ModelBox.Text = profile.Model;
         VoiceBox.Text = profile.Voice;
@@ -210,6 +211,7 @@ public partial class SpeechHttpProfilesWindow : Window
     private static void Normalize(SpeechHttpProfile profile)
     {
         profile.Name ??= "";
+        profile.Engine ??= "Http";
         profile.Model ??= "";
         profile.Voice ??= "";
         profile.Request ??= new SpeechHttpRequestProfile();
@@ -234,6 +236,7 @@ public partial class SpeechHttpProfilesWindow : Window
     private static void CopyInto(SpeechHttpProfile target, SpeechHttpProfile source)
     {
         target.Name = source.Name;
+        target.Engine = source.Engine;
         target.Model = source.Model;
         target.Voice = source.Voice;
         target.Request = source.Request;
@@ -350,6 +353,7 @@ public partial class SpeechHttpProfilesWindow : Window
             case "Hewoyi":
                 preset = new SpeechHttpProfile
                 {
+                    Engine = "Http",
                     Name = "合我意预设",
                     Model = "",
                     Voice = "",
@@ -375,6 +379,23 @@ public partial class SpeechHttpProfilesWindow : Window
                     }
                 };
                 break;
+            case "EdgeTts":
+                preset = new SpeechHttpProfile
+                {
+                    Name = "Microsoft Edge TTS",
+                    Engine = "EdgeTts",
+                    Voice = "zh-CN-XiaoxiaoNeural",
+                    Request = new SpeechHttpRequestProfile
+                    {
+                        // Edge TTS uses its built-in WebSocket transport; this URL is intentionally empty.
+                        Url = "",
+                        Method = "GET",
+                        TimeoutSeconds = 90
+                    },
+                    Auth = new SpeechHttpAuthProfile { Type = "None" },
+                    Response = new SpeechHttpResponseProfile { Type = "RawAudio", Format = "Mp3" }
+                };
+                break;
             default:
                 SetError("请先从列表中选择一个预设。");
                 return;
@@ -383,6 +404,7 @@ public partial class SpeechHttpProfilesWindow : Window
         current.Model = preset.Model;
         current.Voice = preset.Voice;
         current.Name = string.IsNullOrWhiteSpace(preset.Name) ? currentName : preset.Name;
+        current.Engine = preset.Engine;
         current.Request = preset.Request;
         current.Auth = preset.Auth;
         current.Workflow = new SpeechHttpWorkflowProfile();
@@ -401,6 +423,7 @@ public partial class SpeechHttpProfilesWindow : Window
             "GenericPost" => "已填入通用 POST JSON / WAV 基础配置，请填写接口地址及所需鉴权信息。",
             "GenericGet" => "已填入通用 GET 参数 / JSON 音频基础配置，请填写接口地址及所需鉴权信息。",
             "Hewoyi" => "已填入合我意预设，现在只需要你填入API Key即可使用",
+            "EdgeTts" => "已填入 Microsoft Edge TTS 预设，无需 API Key；默认音色为 zh-CN-XiaoxiaoNeural，可在音色栏修改。",
             _ => "选择预设即可自动填入基础配置；API Key 等账号信息由你自己填写。"
         };
         _loading = false;
