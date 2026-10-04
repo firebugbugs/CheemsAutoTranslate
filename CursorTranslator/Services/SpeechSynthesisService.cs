@@ -14,6 +14,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using CursorTranslator.Models;
+using EdgeTTS.DotNet;
+using EdgeTTS.DotNet.Models;
 using NAudio.Wave;
 
 namespace CursorTranslator.Services;
@@ -52,6 +54,15 @@ public sealed class SpeechSynthesisService : IDisposable
         {
             AppLog.Info("Speech synthesis",
                 $"Starting request; provider={settings.SpeechProvider}; textCharacters={text.Length}; timeoutSeconds={configuredTimeout}.");
+
+            if (settings.SpeechProvider == SpeechProviderKind.GenericHttp
+                && settings.ActiveSpeechHttpProfile!.IsEdgeTts)
+            {
+                AppLog.Info("Speech synthesis", "Using Microsoft Edge TTS WebSocket transport.");
+                var edgeAudio = await SynthesizeEdgeTtsAsync(settings.ActiveSpeechHttpProfile, text, timeout.Token);
+                await PlayMp3Async(edgeAudio, generation, timeout.Token);
+                return;
+            }
 
             Uri directMp3Uri = null!;
             var useDirectMp3 = settings.SpeechProvider == SpeechProviderKind.GenericHttp
@@ -119,6 +130,41 @@ public sealed class SpeechSynthesisService : IDisposable
                 timeoutException);
             throw timeoutException;
         }
+    }
+
+    private static async Task<byte[]> SynthesizeEdgeTtsAsync(
+        SpeechHttpProfile profile,
+        string text,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(profile.Voice))
+            throw new InvalidOperationException("Edge TTS 音色不能为空，例如 zh-CN-XiaoxiaoNeural。");
+
+        var communicate = new Communicate(text, voice: profile.Voice.Trim());
+        await using var audio = new MemoryStream();
+        try
+        {
+            await foreach (var chunk in communicate.StreamAsync().WithCancellation(cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (chunk is AudioChunk audioChunk)
+                    await audio.WriteAsync(audioChunk.Data, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("Speech synthesis", "Microsoft Edge TTS synthesis failed.", exception);
+            throw new InvalidOperationException($"Microsoft Edge TTS 合成失败：{exception.Message}", exception);
+        }
+
+        if (audio.Length == 0)
+            throw new InvalidOperationException("Microsoft Edge TTS 没有返回音频数据，请检查音色 ID 和网络连接。");
+        AppLog.Info("Speech synthesis", $"Microsoft Edge TTS audio received; voice={profile.Voice}; audioBytes={audio.Length}.");
+        return audio.ToArray();
     }
 
     private static async Task<AudioResult> SynthesizeOpenAiCompatibleAsync(

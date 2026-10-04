@@ -7,6 +7,7 @@ public sealed class SpeechHttpProfile
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Name { get; set; } = "通用 HTTP 接口";
+    public string Engine { get; set; } = "Http";
     public string Model { get; set; } = "";
     public string Voice { get; set; } = "";
     public SpeechHttpRequestProfile Request { get; set; } = new();
@@ -18,12 +19,19 @@ public sealed class SpeechHttpProfile
     public string ApiKey { get; set; } = "";
 
     [JsonIgnore]
+    public bool IsEdgeTts => string.Equals(Engine, "EdgeTts", StringComparison.OrdinalIgnoreCase);
+
+    [JsonIgnore]
+    public string ProtocolDisplay => IsEdgeTts ? "Edge TTS" : Request.Method;
+
+    [JsonIgnore]
     public string ApiSecret { get; set; } = "";
 
     public SpeechHttpProfile Copy() => new()
     {
         Id = Id,
         Name = Name,
+        Engine = Engine,
         Model = Model,
         Voice = Voice,
         Request = Request.Copy(),
