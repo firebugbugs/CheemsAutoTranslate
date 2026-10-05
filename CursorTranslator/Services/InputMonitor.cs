@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Diagnostics;
+using System.ComponentModel;
 using Avalonia;
 using System.Windows.Automation;
 using System.Windows.Automation.Text;
@@ -22,11 +24,13 @@ public sealed class InputMonitor : IDisposable
     private const int StateSystemUnavailable = 0x00000001;
     private const int StateSystemFocused = 0x00000004;
     private const int StateSystemReadOnly = 0x00000040;
-    private const int StateSystemFocusable = 0x00100000;
     private const int StateSystemProtected = 0x20000000;
     private const string PasswordControlDiagnostic = "检测到受保护的密码输入框，已跳过";
     private Thread? _thread;
+    private readonly AutoResetEvent _pollWake = new(false);
+    private readonly WinEventNotifier _winEventNotifier;
     private volatile bool _running;
+    private int _disposed;
     private string? _elementId;
     private IntPtr _targetRootWindow;
     private IntPtr _overlayWindowHandle;
@@ -43,6 +47,11 @@ public sealed class InputMonitor : IDisposable
         true,
         false,
         (int)(AppSettings.DefaultInactivityDelaySeconds * 1000));
+
+    public InputMonitor()
+    {
+        _winEventNotifier = new WinEventNotifier(() => _pollWake.Set());
+    }
 
     public void ConfigureTranslationTriggers(
         bool onTextChange,
@@ -76,8 +85,10 @@ public sealed class InputMonitor : IDisposable
 
     public void Start()
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         if (_running) return;
         _running = true;
+        _winEventNotifier.Start();
         _thread = new Thread(Run) { IsBackground = true, Name = "CursorTranslator UIA watcher" };
         _thread.SetApartmentState(ApartmentState.STA);
         _thread.Start();
@@ -86,6 +97,8 @@ public sealed class InputMonitor : IDisposable
     public void Stop()
     {
         _running = false;
+        _pollWake.Set();
+        _winEventNotifier.Stop();
         if (_thread is { IsAlive: true } thread && thread != Thread.CurrentThread)
             thread.Join(TimeSpan.FromSeconds(1));
         _thread = null;
@@ -118,7 +131,7 @@ public sealed class InputMonitor : IDisposable
                 }
             }
 
-            Thread.Sleep(180);
+            _pollWake.WaitOne(180);
         }
     }
 
@@ -149,67 +162,90 @@ public sealed class InputMonitor : IDisposable
             return;
         }
 
-        AutomationElement? element;
+        AutomationElement? element = null;
+        string uiAutomationFailure = "";
         try { element = AutomationElement.FocusedElement; }
         catch (ElementNotAvailableException)
         {
-            HandleUnreadableTarget("焦点输入控件暂时不可读，正在等待其文本接口恢复。");
-            return;
+            uiAutomationFailure = "UI Automation 焦点节点已失效";
         }
         catch (COMException)
         {
-            HandleUnreadableTarget("焦点输入控件暂时不可读，正在等待其文本接口恢复。");
-            return;
+            uiAutomationFailure = "UI Automation 无法访问焦点节点";
+        }
+        catch (InvalidOperationException)
+        {
+            uiAutomationFailure = "UI Automation 暂时无法访问焦点节点";
         }
 
         var nativeFocus = GetNativeFocusedElement(nativeFocusHandle);
         if (element is null)
             element = nativeFocus;
 
-        if (element is null)
+        var value = "";
+        var id = "";
+        var bounds = default(PixelRect);
+        var description = "";
+        var uiAutomationReadable = element is not null
+            && TryReadEditable(element, nativeFocus, out value, out id, out bounds, out description);
+        if (uiAutomationReadable)
         {
-            HandleUnreadableTarget("当前没有可监控的输入控件；请将光标放进其他应用中可编辑的输入框。");
+            ProcessReadResult(value, id, bounds, description, foregroundRoot, triggers);
             return;
         }
 
-        if (!TryReadEditable(element, nativeFocus, out var value, out var id, out var bounds, out var description))
+        var uiAutomationDescription = !string.IsNullOrWhiteSpace(description)
+            ? description
+            : element is null
+                ? string.IsNullOrWhiteSpace(uiAutomationFailure) ? "UI Automation 未返回焦点节点" : uiAutomationFailure
+                : GetSafeElementDescription(element);
+        if (uiAutomationDescription == PasswordControlDiagnostic)
         {
-            var uiAutomationDescription = description;
-            if (uiAutomationDescription == PasswordControlDiagnostic)
-            {
-                HandleUnreadableTarget(uiAutomationDescription);
-                return;
-            }
-
-            if (!TryReadNativeEdit(nativeFocusHandle, out value, out id, out bounds, out description))
-            {
-                var nativeDescription = description;
-                if (nativeDescription == PasswordControlDiagnostic)
-                {
-                    HandleUnreadableTarget(nativeDescription);
-                    return;
-                }
-
-                if (!TryReadLegacyAccessible(nativeFocusHandle, out value, out id, out bounds, out description))
-                {
-                    if (OfficeDocumentInputSource.TryReadFocusedParagraph(
-                            element, nativeFocusHandle, out value, out id, out bounds, out var officeDescription))
-                    {
-                        description = officeDescription;
-                    }
-                    else
-                    {
-                        var inputDescription = !string.IsNullOrWhiteSpace(nativeDescription)
-                            ? nativeDescription
-                            : uiAutomationDescription;
-                        description = $"{inputDescription}；{officeDescription}";
-                        HandleUnreadableTarget(description);
-                        return;
-                    }
-                }
-            }
+            HandleUnreadableTarget(uiAutomationDescription);
+            return;
         }
 
+        if (TryReadNativeEdit(nativeFocusHandle, out value, out id, out bounds, out description))
+        {
+            ProcessReadResult(value, id, bounds, description, foregroundRoot, triggers);
+            return;
+        }
+        var nativeDescription = description;
+        if (nativeDescription == PasswordControlDiagnostic)
+        {
+            HandleUnreadableTarget(nativeDescription);
+            return;
+        }
+
+        if (TryReadLegacyAccessible(nativeFocusHandle, out value, out id, out bounds, out description))
+        {
+            ProcessReadResult(value, id, bounds, description, foregroundRoot, triggers);
+            return;
+        }
+
+        if (OfficeDocumentInputSource.TryReadFocusedParagraph(element, nativeFocusHandle,
+                out value, out id, out bounds, out var officeDescription))
+        {
+            ProcessReadResult(value, id, bounds, officeDescription, foregroundRoot, triggers);
+            return;
+        }
+
+        var diagnostic = string.IsNullOrWhiteSpace(nativeDescription) ? uiAutomationDescription : nativeDescription;
+        if (IsChromiumWindow(foregroundWindow, nativeFocusHandle, out var chromiumProcess))
+        {
+            var treeSummary = element is null ? "焦点节点不可用" : DescribeEditableUiTree(element, nativeFocus);
+            diagnostic = $"{chromiumProcess} 的焦点控件没有提供可读文本；UIA 检查：{treeSummary}。可检查该应用的无障碍支持；Chrome/Edge 可用 --force-renderer-accessibility 启动，Electron 应用需在应用内启用无障碍支持。";
+        }
+        else if (string.IsNullOrWhiteSpace(diagnostic))
+        {
+            diagnostic = "当前没有可读取的焦点输入控件。";
+        }
+        HandleUnreadableTarget(diagnostic);
+    }
+
+    private void ProcessReadResult(string value, string id, PixelRect bounds, string description,
+        IntPtr foregroundRoot, TriggerConfiguration triggers)
+    {
         if (string.IsNullOrEmpty(id))
         {
             HandleUnreadableTarget(description);
@@ -281,6 +317,76 @@ public sealed class InputMonitor : IDisposable
         {
             Commit(value, bounds);
         }
+    }
+
+    private static bool IsChromiumWindow(IntPtr foregroundWindow, IntPtr nativeFocusHandle, out string processName)
+    {
+        processName = "Chromium/Electron";
+        try
+        {
+            var handle = nativeFocusHandle != IntPtr.Zero ? nativeFocusHandle : foregroundWindow;
+            GetWindowThreadProcessId(handle, out var processId);
+            if (processId != 0)
+            {
+                using var process = Process.GetProcessById((int)processId);
+                processName = process.ProcessName;
+                if (processName.Contains("chrome", StringComparison.OrdinalIgnoreCase)
+                    || processName.Contains("edge", StringComparison.OrdinalIgnoreCase)
+                    || processName.Contains("chrom", StringComparison.OrdinalIgnoreCase)
+                    || processName.Contains("electron", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            var className = new StringBuilder(256);
+            return GetClassName(handle, className, className.Capacity) > 0
+                && (className.ToString().StartsWith("Chrome_", StringComparison.OrdinalIgnoreCase)
+                    || className.ToString().StartsWith("Cef", StringComparison.OrdinalIgnoreCase));
+        }
+        catch (ArgumentException) { return false; }
+        catch (InvalidOperationException) { return false; }
+        catch (Win32Exception) { return false; }
+    }
+
+    private static string DescribeEditableUiTree(AutomationElement focusedElement, AutomationElement? nativeFocus)
+    {
+        var root = nativeFocus ?? focusedElement;
+        var queue = new Queue<(AutomationElement Element, int Depth)>();
+        var summary = new List<string>();
+        queue.Enqueue((root, 0));
+        var walker = TreeWalker.RawViewWalker;
+        var visited = 0;
+        while (queue.Count > 0 && visited < 80 && summary.Count < 8)
+        {
+            var (current, depth) = queue.Dequeue();
+            visited++;
+            try
+            {
+                var info = current.Current;
+                if (info.ControlType == ControlType.Edit
+                    || info.ControlType == ControlType.Document
+                    || info.ControlType == ControlType.Text)
+                {
+                    var patterns = new List<string>();
+                    if (current.TryGetCurrentPattern(ValuePattern.Pattern, out _)) patterns.Add("Value");
+                    if (current.TryGetCurrentPattern(TextPattern.Pattern, out _)) patterns.Add("Text");
+                    var controlName = info.ControlType.ProgrammaticName.Replace("ControlType.", "", StringComparison.Ordinal);
+                    summary.Add($"深度{depth}:{controlName}({(patterns.Count == 0 ? "无文本模式" : string.Join("+", patterns))})");
+                }
+
+                if (depth >= 5) continue;
+                var child = walker.GetFirstChild(current);
+                for (var sibling = 0; child is not null && sibling < 24; sibling++)
+                {
+                    queue.Enqueue((child, depth + 1));
+                    child = walker.GetNextSibling(child);
+                }
+            }
+            catch (ElementNotAvailableException) { }
+            catch (COMException) { }
+            catch (InvalidOperationException) { }
+        }
+
+        return summary.Count == 0 ? $"在 {visited} 个无障碍节点中未找到 Edit/Document" : string.Join("、", summary);
     }
 
     private bool IsOverlayWindowOrOwnedPopup(IntPtr foregroundWindow, IntPtr foregroundRoot)
@@ -408,6 +514,46 @@ public sealed class InputMonitor : IDisposable
                 current = parent;
             }
 
+            // Some browser and custom editor providers place the caret on a generic
+            // container while exposing the actual editable node below it. Keep this
+            // search inside the nearest editable/document subtree and strictly bound it.
+            var searchRoot = candidates.FirstOrDefault(candidate =>
+            {
+                try
+                {
+                    var type = candidate.Current.ControlType;
+                    return type == ControlType.Edit || type == ControlType.Document;
+                }
+                catch (ElementNotAvailableException) { return false; }
+                catch (COMException) { return false; }
+            }) ?? focusedElement;
+            var descendantQueue = new Queue<(AutomationElement Element, int Depth)>();
+            descendantQueue.Enqueue((searchRoot, 0));
+            var visited = 0;
+            while (descendantQueue.Count > 0 && visited < 48)
+            {
+                var (node, depth) = descendantQueue.Dequeue();
+                visited++;
+                try
+                {
+                    if (node.Current.ControlType is var controlType
+                        && (controlType == ControlType.Edit || controlType == ControlType.Document)
+                        && candidates.All(candidate => !IsSameElement(candidate, node)))
+                        candidates.Add(node);
+
+                    if (depth >= 4) continue;
+                    var child = walker.GetFirstChild(node);
+                    for (var sibling = 0; child is not null && sibling < 16; sibling++)
+                    {
+                        descendantQueue.Enqueue((child, depth + 1));
+                        child = walker.GetNextSibling(child);
+                    }
+                }
+                catch (ElementNotAvailableException) { }
+                catch (COMException) { }
+                catch (InvalidOperationException) { }
+            }
+
             if (nativeFocus is not null && candidates.All(candidate => !IsSameElement(candidate, nativeFocus)))
                 candidates.Add(nativeFocus);
 
@@ -423,7 +569,7 @@ public sealed class InputMonitor : IDisposable
                 }
             }
 
-            description = $"{description} 未暴露可读的 UI Automation 文本模式；已检查焦点控件及其父级控件";
+            description = $"{description} 未暴露可读的 UI Automation 文本模式；已检查焦点控件、父级和有限范围内的 Edit/Document 子节点";
             return false;
         }
         catch (ElementNotAvailableException) { description = "焦点控件刚刚关闭，请重新聚焦输入框"; return false; }
@@ -450,40 +596,91 @@ public sealed class InputMonitor : IDisposable
             var info = candidate.Current;
             if (info.ProcessId == Environment.ProcessId || info.ProcessId != focusedProcessId || info.IsPassword)
                 return false;
+            if (info.ControlType != ControlType.Edit && info.ControlType != ControlType.Document)
+                return false;
+            if (!info.HasKeyboardFocus && !IsFocusElementOrAncestor(candidate, focusedElement))
+                return false;
+
+            var isFocusedElement = IsSameElement(candidate, focusedElement);
+            var candidateOwnsFocus = info.HasKeyboardFocus || isFocusedElement;
+            // A Document ancestor often contains all of a window's visible UI text.
+            // Do not treat that container as an input target just because a control
+            // somewhere beneath it has focus (for example, a menu item or button).
+            if (info.ControlType == ControlType.Document && !candidateOwnsFocus)
+                return false;
 
             object? pattern = null;
-            if (candidate.TryGetCurrentPattern(ValuePattern.Pattern, out var valuePattern))
+            try
             {
-                var valueInfo = ((ValuePattern)valuePattern).Current;
-                if (valueInfo.IsReadOnly) return false;
-                value = valueInfo.Value ?? "";
+                if (candidate.TryGetCurrentPattern(ValuePattern.Pattern, out var valuePattern))
+                {
+                    try
+                    {
+                        var valueInfo = ((ValuePattern)valuePattern).Current;
+                        var candidateValue = valueInfo.Value ?? "";
+                        // Empty is valid for a focused Edit control; an empty value from a
+                        // generic container is not evidence that it is the text target.
+                        if (!valueInfo.IsReadOnly
+                            && (candidateValue.Length > 0 || info.ControlType == ControlType.Edit))
+                        {
+                            value = candidateValue;
+                            pattern = valuePattern;
+                        }
+                    }
+                    catch (ElementNotAvailableException) { }
+                    catch (InvalidOperationException) { }
+                    catch (COMException) { }
+                }
+            }
+            catch (ElementNotAvailableException) { }
+            catch (InvalidOperationException) { }
+            catch (COMException) { }
 
-                // Some custom UIA providers report ValuePattern on every node, including
-                // non-editable containers. An empty value from such a node is not evidence
-                // that it is an editable text target; otherwise it masks the Win32/MSAA
-                // fallbacks and leaves monitoring connected to a permanently empty value.
-                if (value.Length == 0 && info.ControlType != ControlType.Edit)
-                    return false;
+            try
+            {
+                if (pattern is null && candidate.TryGetCurrentPattern(TextPattern.Pattern, out var textPattern))
+                {
+                    try
+                    {
+                        var typedTextPattern = (TextPattern)textPattern;
+                        var documentRange = typedTextPattern.DocumentRange;
+                        var readOnlyValue = documentRange.GetAttributeValue(TextPattern.IsReadOnlyAttribute);
+                        var isExplicitlyReadOnly = readOnlyValue is bool isReadOnly && isReadOnly;
+                        var isExplicitlyEditable = readOnlyValue is bool explicitlyReadOnly && !explicitlyReadOnly;
 
-                pattern = valuePattern;
+                        // Edit is a strong indication of an input control, but still
+                        // reject it when the provider says its text is read-only.
+                        // Document is ambiguous, so accept it only when it owns focus
+                        // and explicitly reports editable text. This avoids reading
+                        // the page/menu text exposed by unrelated focused controls.
+                        if (isExplicitlyReadOnly
+                            || (info.ControlType == ControlType.Document && (!candidateOwnsFocus || !isExplicitlyEditable)))
+                            return false;
+
+                        if (IsSameElement(candidate, focusedElement)
+                            || info.ControlType == ControlType.Edit
+                            || info.ControlType == ControlType.Document)
+                        {
+                            var candidateValue = documentRange.GetText(-1);
+                            if (!string.IsNullOrEmpty(candidateValue)
+                                || info.ControlType == ControlType.Edit
+                                || info.ControlType == ControlType.Document)
+                            {
+                                pattern = typedTextPattern;
+                                value = candidateValue;
+                            }
+                        }
+                    }
+                    catch (ElementNotAvailableException) { }
+                    catch (InvalidOperationException) { }
+                    catch (COMException) { }
+                }
             }
-            else if (candidate.TryGetCurrentPattern(TextPattern.Pattern, out var textPattern))
-            {
-                if (!IsSameElement(candidate, focusedElement)
-                    && info.ControlType != ControlType.Edit
-                    && info.ControlType != ControlType.Document)
-                    return false;
-                pattern = textPattern;
-                value = ((TextPattern)textPattern).DocumentRange.GetText(-1);
-                if (string.IsNullOrEmpty(value)
-                    && info.ControlType != ControlType.Edit
-                    && info.ControlType != ControlType.Document)
-                    return false;
-            }
-            else
-            {
-                return false;
-            }
+            catch (ElementNotAvailableException) { }
+            catch (InvalidOperationException) { }
+            catch (COMException) { }
+
+            if (pattern is null) return false;
 
             if (IsPlaceholderText(value, info.Name, info.HelpText))
                 value = "";
@@ -531,6 +728,7 @@ public sealed class InputMonitor : IDisposable
         try { return AutomationElement.FromHandle(focus); }
         catch (ElementNotAvailableException) { return null; }
         catch (COMException) { return null; }
+        catch (InvalidOperationException) { return null; }
     }
 
     private static bool TryReadNativeEdit(IntPtr handle, out string value, out string id, out PixelRect bounds, out string description)
@@ -595,6 +793,14 @@ public sealed class InputMonitor : IDisposable
         return true;
     }
 
+    private static string GetSafeElementDescription(AutomationElement element)
+    {
+        try { return FormatDescription(element.Current); }
+        catch (ElementNotAvailableException) { return "UI Automation 焦点节点已失效"; }
+        catch (COMException) { return "UI Automation 无法访问焦点节点"; }
+        catch (InvalidOperationException) { return "UI Automation 焦点节点暂不可读"; }
+    }
+
     private static bool TryReadLegacyAccessible(IntPtr handle, out string value, out string id, out PixelRect bounds, out string description)
     {
         value = "";
@@ -638,7 +844,7 @@ public sealed class InputMonitor : IDisposable
             var state = Convert.ToInt32(focused.accState[childId]);
             if (role != RoleSystemText
                 || (state & (StateSystemUnavailable | StateSystemReadOnly | StateSystemProtected)) != 0
-                || (state & (StateSystemFocusable | StateSystemFocused)) == 0)
+                || (state & StateSystemFocused) == 0)
                 return false;
 
             value = focused.accValue[childId] ?? "";
@@ -728,6 +934,24 @@ public sealed class InputMonitor : IDisposable
         }
         catch (ElementNotAvailableException) { return false; }
         catch (COMException) { return false; }
+    }
+
+    private static bool IsFocusElementOrAncestor(AutomationElement candidate, AutomationElement focusedElement)
+    {
+        try
+        {
+            var walker = TreeWalker.RawViewWalker;
+            var current = focusedElement;
+            for (var depth = 0; current is not null && depth < 12; depth++)
+            {
+                if (IsSameElement(candidate, current)) return true;
+                current = walker.GetParent(current);
+            }
+        }
+        catch (ElementNotAvailableException) { }
+        catch (COMException) { }
+        catch (InvalidOperationException) { }
+        return false;
     }
 
     private static int GetCandidatePriority(AutomationElement candidate, AutomationElement focusedElement)
@@ -850,7 +1074,13 @@ public sealed class InputMonitor : IDisposable
         bool AfterInactivity,
         int InactivityDelayMilliseconds);
 
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        Stop();
+        _winEventNotifier.Dispose();
+        _pollWake.Dispose();
+    }
 
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr GetAncestor(IntPtr hWnd, uint flags);

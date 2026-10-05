@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="CursorTranslator.Services.ManagementWindowTitleBar">
+  <Grid Classes="management-window-titlebar" ColumnDefinitions="*,Auto" Background="Transparent"
+        PointerPressed="TitleBar_PointerPressed">
+    <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+      <Image Classes="management-window-icon" Source="/Assets/translator_icon.png"
+             Width="20" Height="20" Stretch="Uniform"
+             RenderOptions.BitmapInterpolationMode="HighQuality"
+             VerticalAlignment="Center" />
+      <TextBlock x:Name="TitleTextBlock" Classes="management-window-title" />
+    </StackPanel>
+    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3" VerticalAlignment="Center">
+      <Button x:Name="MinimizeWindowButton" Classes="window-control" ToolTip.Tip="最小化"
+              Click="Minimize_Click">
+        <Grid Width="18" Height="18">
+          <Path Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
+                Fill="{Binding #MinimizeWindowButton.Foreground}"
+                Data="{StaticResource WindowMinimizeGeometry}" />
+        </Grid>
+      </Button>
+      <Button x:Name="MaximizeButton" Classes="window-control" ToolTip.Tip="最大化"
+              Click="Maximize_Click">
+        <Grid Width="18" Height="18">
+          <Path x:Name="MaximizeIcon" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
+                Fill="{Binding #MaximizeButton.Foreground}"
+                Data="{StaticResource WindowMaximizeGeometry}" />
+          <Path x:Name="RestoreIcon" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
+                Fill="{Binding #MaximizeButton.Foreground}" IsVisible="False"
+                Data="{StaticResource WindowRestoreGeometry}" />
+        </Grid>
+      </Button>
+      <Button x:Name="CloseWindowButton" Classes="window-control close" ToolTip.Tip="关闭窗口"
+              Click="CloseWindow_Click">
+        <Grid Width="18" Height="18">
+          <Path Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
+                Fill="{Binding #CloseWindowButton.Foreground}"
+                Data="{StaticResource WindowCloseGeometry}" />
+        </Grid>
+      </Button>
+    </StackPanel>
+  </Grid>
+</UserControl>

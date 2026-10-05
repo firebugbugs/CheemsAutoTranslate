@@ -32,7 +32,7 @@ internal static class OfficeDocumentInputSource
     private static extern IntPtr GetParent(IntPtr window);
 
     public static bool TryReadFocusedParagraph(
-        AutomationElement focusedElement,
+        AutomationElement? focusedElement,
         IntPtr nativeFocusHandle,
         out string value,
         out string id,
@@ -53,13 +53,23 @@ internal static class OfficeDocumentInputSource
         var stage = "读取文档焦点";
         try
         {
-            var focusInfo = focusedElement.Current;
-            if (focusInfo.IsPassword
-                || focusInfo.ControlType != ControlType.Document
-                    && focusInfo.ControlType != ControlType.Edit
-                    && focusInfo.ControlType != ControlType.Group
-                    && focusInfo.ControlType != ControlType.Custom
-                    && focusInfo.ControlType != ControlType.Pane)
+            AutomationElement.AutomationElementInformation? focusInfo = focusedElement is null
+                ? null
+                : focusedElement.Current;
+            if (!focusInfo.HasValue && nativeFocusHandle != IntPtr.Zero)
+            {
+                try { focusInfo = AutomationElement.FromHandle(nativeFocusHandle).Current; }
+                catch (ElementNotAvailableException) { }
+                catch (COMException) { }
+            }
+
+            if (focusInfo.HasValue
+                && (focusInfo.Value.IsPassword
+                    || focusInfo.Value.ControlType != ControlType.Document
+                        && focusInfo.Value.ControlType != ControlType.Edit
+                        && focusInfo.Value.ControlType != ControlType.Group
+                        && focusInfo.Value.ControlType != ControlType.Custom
+                        && focusInfo.Value.ControlType != ControlType.Pane))
             {
                 description = "文档接口未命中：焦点不是可编辑文档区域";
                 return false;
@@ -76,7 +86,8 @@ internal static class OfficeDocumentInputSource
             }
 
             GetWindowThreadProcessId(nativeFocusHandle, out var focusedProcessId);
-            if (focusedProcessId == 0 || focusedProcessId != (uint)focusInfo.ProcessId)
+            if (focusedProcessId == 0
+                || focusInfo.HasValue && focusedProcessId != (uint)focusInfo.Value.ProcessId)
             {
                 description = "文档接口未命中：UI Automation 焦点和原生焦点不一致";
                 return false;
@@ -148,6 +159,39 @@ internal static class OfficeDocumentInputSource
 
                 dynamic document = documentObject;
                 dynamic selection = selectionObject;
+                // Prefer an explicit selection. When the caret is collapsed, use the
+                // containing paragraph as the useful translation context.
+                stage = "读取当前选区";
+                object? selectedTextValue = selection.Text;
+                var selectedText = Convert.ToString(selectedTextValue) ?? "";
+                if (selectedText.Length > 0)
+                {
+                    value = selectedText;
+                    stage = "读取段落集合";
+                    paragraphsObject = selection.Paragraphs;
+                    dynamic selectedParagraphs = paragraphsObject;
+                    paragraphObject = selectedParagraphs.Item(1);
+                    dynamic selectedParagraph = paragraphObject;
+                    rangeObject = selectedParagraph.Range;
+                    dynamic selectedParagraphRange = rangeObject;
+                    object? selectedParagraphStart = selectedParagraphRange.Start;
+                    var selectedParagraphStartValue = Convert.ToInt32(selectedParagraphStart);
+                    object? selectedDocumentNameValue = document.Name;
+                    string selectedDocumentName = Convert.ToString(selectedDocumentNameValue) ?? "";
+                    var selectedDocumentKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(selectedDocumentName)))[..16];
+                    var selectedRectangle = focusInfo.HasValue ? focusInfo.Value.BoundingRectangle : default;
+                    if (selectedRectangle.Width > 0 && selectedRectangle.Height > 0
+                        && !double.IsNaN(selectedRectangle.Left) && !double.IsNaN(selectedRectangle.Top)
+                        && !double.IsInfinity(selectedRectangle.Left) && !double.IsInfinity(selectedRectangle.Top))
+                    {
+                        bounds = new PixelRect((int)selectedRectangle.Left, (int)selectedRectangle.Top,
+                            Math.Max(1, (int)selectedRectangle.Width), Math.Max(1, (int)selectedRectangle.Height));
+                    }
+                    id = $"{focusedProcessId}:word:{activeWindowHandle.ToInt64():X}:{selectedDocumentKey}:{selectedParagraphStartValue}";
+                    description = "Word-compatible document selection";
+                    return true;
+                }
+
                 stage = "读取段落集合";
                 paragraphsObject = selection.Paragraphs;
                 if (paragraphsObject is null)
@@ -190,7 +234,7 @@ internal static class OfficeDocumentInputSource
                 stage = "生成文档标识";
                 var documentKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(documentName)))[..16];
 
-                var rectangle = focusInfo.BoundingRectangle;
+                var rectangle = focusInfo.HasValue ? focusInfo.Value.BoundingRectangle : default;
                 if (rectangle.Width > 0 && rectangle.Height > 0
                     && !double.IsNaN(rectangle.Left) && !double.IsNaN(rectangle.Top)
                     && !double.IsInfinity(rectangle.Left) && !double.IsInfinity(rectangle.Top))

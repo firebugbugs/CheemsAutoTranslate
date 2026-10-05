@@ -1,0 +1,89 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:CursorTranslator.Services"
+        x:Class="CursorTranslator.Services.SpeechAiConnectionProfilesWindow"
+        Title="语音 AI 接口管理" Width="840" Height="650" MinWidth="720" MinHeight="560"
+        WindowStartupLocation="CenterOwner" CanResize="True" SystemDecorations="None"
+        Background="Transparent" TransparencyLevelHint="Transparent" Foreground="#302B27">
+  <Window.Styles>
+    <StyleInclude Source="avares://CursorTranslator/Assets/HttpManagementStyles.axaml" />
+  </Window.Styles>
+
+  <Border Classes="management-window-surface" PointerPressed="WindowSurface_PointerPressed">
+    <Grid RowDefinitions="40,Auto,*,Auto">
+      <controls:ManagementWindowTitleBar Grid.Row="0" Title="语音 AI 接口管理" />
+
+      <Grid Classes="management-window-heading-row" Grid.Row="1">
+        <StackPanel Spacing="3">
+          <TextBlock Text="语音 AI 档案" Classes="management-window-heading" />
+        </StackPanel>
+      </Grid>
+
+      <Grid Classes="management-window-content-row" Grid.Row="2" ColumnDefinitions="224,*" ColumnSpacing="14">
+        <Border Classes="management-window-sidebar">
+          <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
+            <StackPanel Margin="2,2,2,0" Spacing="3">
+              <TextBlock Classes="management-window-section-heading" Text="接口列表" />
+            </StackPanel>
+            <ListBox x:Name="ProfileListBox" Grid.Row="1" Classes="profile-list"
+                     SelectionChanged="ProfileList_SelectionChanged">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Spacing="4">
+                    <TextBlock Classes="profile-name" Text="{Binding Name}" FontSize="13" FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Classes="profile-subtitle" Text="{Binding Model}" FontSize="11"
+                               TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="8">
+              <Button Content="＋ 新建接口" Click="NewProfile_Click" />
+              <Button Grid.Column="1" Content="删除" Classes="secondary" Click="DeleteProfile_Click" />
+            </Grid>
+          </Grid>
+        </Border>
+
+        <Border Grid.Column="1" Classes="management-window-editor">
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="13">
+              <TextBlock Text="接口配置" FontSize="15" FontWeight="SemiBold" />
+              <StackPanel Spacing="4">
+                <TextBlock Text="接口名称" FontSize="11" Foreground="#756B63" />
+                <TextBox x:Name="ProfileNameBox" Watermark="例如：Kokoro、OpenAI TTS" />
+              </StackPanel>
+              <StackPanel Spacing="4">
+                <TextBlock Text="API 地址" FontSize="11" Foreground="#756B63" />
+                <TextBox x:Name="EndpointBox" Watermark="http://127.0.0.1:8880/v1" />
+              </StackPanel>
+              <StackPanel Spacing="4">
+                <TextBlock Text="模型名称" FontSize="11" Foreground="#756B63" />
+                <TextBox x:Name="ModelBox" Watermark="填写语音服务支持的 TTS 模型名称" />
+              </StackPanel>
+              <StackPanel Spacing="4">
+                <TextBlock Text="API Key（可选）" FontSize="11" Foreground="#756B63" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                  <TextBox x:Name="ProfileApiKeyBox" PasswordChar="●" Watermark="API Key；本地服务可留空" />
+                  <Button x:Name="ApiKeyVisibilityButton" Grid.Column="1" Classes="secondary"
+                          Content="显示" Padding="9,5" Click="ToggleApiKeyVisibility_Click" />
+                </Grid>
+              </StackPanel>
+              <StackPanel Spacing="4">
+                <TextBlock Text="音色" FontSize="11" Foreground="#756B63" />
+                <TextBox x:Name="VoiceBox" Watermark="例如：af_heart、alloy" />
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </Border>
+      </Grid>
+
+      <Grid Classes="management-window-footer" Grid.Row="3" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+        <TextBlock x:Name="ErrorText" VerticalAlignment="Center" Foreground="#B42318"
+                   FontSize="11" TextWrapping="Wrap" IsVisible="False" />
+        <Button Grid.Column="1" Content="取消" Classes="secondary" Click="Cancel_Click" />
+        <Button Grid.Column="2" Content="保存" Click="Save_Click" />
+      </Grid>
+    </Grid>
+  </Border>
+</Window>

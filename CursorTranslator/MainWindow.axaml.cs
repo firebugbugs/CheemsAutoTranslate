@@ -27,16 +27,14 @@ public partial class MainWindow : Window
     private readonly TranslationOverlay _overlay;
     private AppSettings _settings;
     private CardAppearanceSettings _cardAppearance;
-    private AiAnswerWindow? _aiAnswerWindow;
-    private CancellationTokenSource? _aiQuestionCancellation;
-    private long _latestAiQuestion;
+    private CancellationTokenSource? _deepAnalysisCancellation;
+    private long _latestDeepAnalysis;
     private bool _isMonitoring;
     private string _monitorStateLabel = "已退出";
     private bool _allowClose;
     private bool _updatingTriggerControls;
     private bool _normalizingMaximumTranslationCharacters;
-    private bool _apiKeyVisible;
-    private bool _speechApiKeyVisible;
+    private BorderlessWindowResizeSession? _windowResizeSession;
     private bool _updatingTranslationProviderControls;
     private bool _updatingSpeechProviderControls = true;
     private long _translationGeneration;
@@ -50,15 +48,18 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _settings = _settingsStore.Load();
-        EndpointBox.Text = _settings.Endpoint;
-        ModelBox.Text = _settings.Model;
-        ApiKeyBox.Text = _settings.ApiKey;
+        TranslationAiProfileComboBox.ItemsSource = _settings.AiProfiles;
+        TranslationAiProfileComboBox.SelectedItem = _settings.ActiveAiProfile;
+        AnalysisAiProfileComboBox.ItemsSource = _settings.AiProfiles;
+        AnalysisAiProfileComboBox.SelectedItem = _settings.ActiveAnalysisAiProfile;
+        TranslationPromptProfileComboBox.ItemsSource = _settings.TranslationPromptProfiles;
+        TranslationPromptProfileComboBox.SelectedItem = _settings.ActiveTranslationPromptProfile;
+        AnalysisPromptProfileComboBox.ItemsSource = _settings.AnalysisPromptProfiles;
+        AnalysisPromptProfileComboBox.SelectedItem = _settings.ActiveAnalysisPromptProfile;
         HttpTranslationProfileComboBox.ItemsSource = _settings.TranslationHttpProfiles;
         HttpTranslationProfileComboBox.SelectedItem = _settings.ActiveTranslationHttpProfile;
-        SpeechEndpointBox.Text = _settings.SpeechEndpoint;
-        SpeechModelBox.Text = _settings.SpeechModel;
-        SpeechApiKeyBox.Text = _settings.SpeechApiKey;
-        SpeechVoiceBox.Text = _settings.SpeechVoice;
+        SpeechAiProfileComboBox.ItemsSource = _settings.SpeechAiProfiles;
+        SpeechAiProfileComboBox.SelectedItem = _settings.ActiveSpeechAiProfile;
         HttpSpeechProfileComboBox.ItemsSource = _settings.SpeechHttpProfiles;
         HttpSpeechProfileComboBox.SelectedItem = _settings.ActiveSpeechHttpProfile;
         _updatingSpeechProviderControls = true;
@@ -70,7 +71,6 @@ public partial class MainWindow : Window
         UpdateSpeechProviderTabIndicators();
         _updatingSpeechProviderControls = false;
         RealTimeSpeechCheckBox.IsChecked = _settings.RealTimeSpeechEnabled;
-        SystemPromptBox.Text = _settings.SystemPrompt;
         _updatingTranslationProviderControls = true;
         EnableAiProviderSwitch.IsChecked = _settings.TranslationProvider == TranslationProviderKind.OpenAiCompatible;
         EnableHttpProviderSwitch.IsChecked = _settings.TranslationProvider == TranslationProviderKind.HttpTranslation;
@@ -90,8 +90,10 @@ public partial class MainWindow : Window
         _overlay = new TranslationOverlay();
         _overlay.ApplyAppearance(_cardAppearance);
         _overlay.AppearanceChanged += OnCardAppearanceChanged;
-        _overlay.AiQuestionRequested += OnAiQuestionRequested;
+        _overlay.DeepAnalysisRequested += OnDeepAnalysisRequested;
+        _overlay.DeepAnalysisDismissed += OnDeepAnalysisDismissed;
         _overlay.SpeechRequested += OnSpeechRequested;
+        UpdateDeepAnalysisAvailability();
         _monitor = new InputMonitor();
         _overlay.NativeWindowHandleAvailable += _monitor.SetOverlayWindowHandle;
         _overlay.UserInteraction += _monitor.PreserveTargetForOverlayInteraction;
@@ -143,8 +145,7 @@ public partial class MainWindow : Window
         StopMonitoring();
         CancelSpeechPlayback();
         _speechSynthesis.Dispose();
-        _aiQuestionCancellation?.Cancel();
-        _aiAnswerWindow?.Close();
+        _deepAnalysisCancellation?.Cancel();
         Close();
     }
 
@@ -154,62 +155,65 @@ public partial class MainWindow : Window
         _cardAppearanceStore.Save(settings);
     }
 
-    private void OnAiQuestionRequested(string text)
-        => Dispatcher.UIThread.Post(() => _ = AskAiAboutTextAsync(text), DispatcherPriority.Background);
+    private void OnDeepAnalysisRequested(string selectedText, string context)
+        => Dispatcher.UIThread.Post(() => _ = ShowDeepAnalysisAsync(selectedText, context), DispatcherPriority.Background);
 
-    private async Task AskAiAboutTextAsync(string text)
+    private void OnDeepAnalysisDismissed()
     {
-        if (_aiAnswerWindow is null)
-        {
-            var answerWindow = new AiAnswerWindow();
-            _aiAnswerWindow = answerWindow;
-            answerWindow.Closed += (_, _) =>
-            {
-                if (!ReferenceEquals(_aiAnswerWindow, answerWindow)) return;
-                _aiAnswerWindow = null;
-                _aiQuestionCancellation?.Cancel();
-            };
-        }
+        Interlocked.Increment(ref _latestDeepAnalysis);
+        _deepAnalysisCancellation?.Cancel();
+    }
 
-        var popup = _aiAnswerWindow;
-        if (!_settings.IsAiConfigured)
+    private async Task ShowDeepAnalysisAsync(string selectedText, string context)
+    {
+        if (string.IsNullOrWhiteSpace(selectedText)) return;
+
+        SaveSettings();
+        _deepAnalysisCancellation?.Cancel();
+        var requestId = Interlocked.Increment(ref _latestDeepAnalysis);
+        _overlay.ShowDeepAnalysisPending();
+        if (!_settings.IsDeepAnalysisConfigured)
         {
-            popup.ShowPending(_overlay);
-            popup.ShowError("AI 释义需要配置 AI 接口地址、模型名称和系统提示词。");
+            _overlay.ShowDeepAnalysisError("请为详解选择并配置 AI 接口地址、模型名称和深度分析指令。");
             return;
         }
 
-        _aiQuestionCancellation?.Cancel();
         var cancellation = new CancellationTokenSource();
-        _aiQuestionCancellation = cancellation;
-        var requestId = Interlocked.Increment(ref _latestAiQuestion);
-        popup.ShowPending(_overlay);
-
+        _deepAnalysisCancellation = cancellation;
         try
         {
-            var answer = await _translation.ExplainMeaningAsync(_settings, text, cancellation.Token);
-            if (requestId == Interlocked.Read(ref _latestAiQuestion)
-                && ReferenceEquals(_aiAnswerWindow, popup) && popup.IsVisible)
-                popup.ShowAnswer(answer);
+            var answer = await _translation.ExplainMeaningAsync(
+                _settings,
+                _settings.ActiveAnalysisAiProfile!,
+                selectedText,
+                context,
+                cancellation.Token);
+            if (requestId == Interlocked.Read(ref _latestDeepAnalysis))
+                _overlay.ShowDeepAnalysisResult(answer);
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            AppLog.Error("AI explanation", "AI explanation request failed.", ex);
-            if (requestId == Interlocked.Read(ref _latestAiQuestion)
-                && ReferenceEquals(_aiAnswerWindow, popup) && popup.IsVisible)
-                popup.ShowError(ex.Message);
+            AppLog.Error("AI deep analysis", "AI deep analysis request failed.", ex);
+            if (requestId == Interlocked.Read(ref _latestDeepAnalysis))
+                _overlay.ShowDeepAnalysisError($"AI 暂时无法完成分析：{ex.Message}");
         }
         finally
         {
-            if (ReferenceEquals(_aiQuestionCancellation, cancellation))
-                _aiQuestionCancellation = null;
+            if (ReferenceEquals(_deepAnalysisCancellation, cancellation))
+                _deepAnalysisCancellation = null;
             cancellation.Dispose();
         }
     }
 
     private void SaveSettings()
     {
+        var translationPromptProfile = TranslationPromptProfileComboBox.SelectedItem as PromptProfile
+            ?? _settings.ActiveTranslationPromptProfile;
+        var analysisPromptProfile = AnalysisPromptProfileComboBox.SelectedItem as PromptProfile
+            ?? _settings.ActiveAnalysisPromptProfile;
+        var speechAiProfile = SpeechAiProfileComboBox.SelectedItem as SpeechAiConnectionProfile
+            ?? _settings.ActiveSpeechAiProfile;
         var inactivityDelaySeconds = _settings.InactivityDelaySeconds;
         var hasValidDelay = decimal.TryParse(
                 InactivityDelaySecondsBox.Text?.Trim(),
@@ -236,21 +240,30 @@ public partial class MainWindow : Window
 
         _settings = new AppSettings
         {
-            Endpoint = EndpointBox.Text?.Trim() ?? "",
-            Model = ModelBox.Text?.Trim() ?? "",
-            ApiKey = ApiKeyBox.Text?.Trim() ?? "",
+            Endpoint = (TranslationAiProfileComboBox.SelectedItem as AiConnectionProfile)?.Endpoint ?? "",
+            Model = (TranslationAiProfileComboBox.SelectedItem as AiConnectionProfile)?.Model ?? "",
+            ApiKey = (TranslationAiProfileComboBox.SelectedItem as AiConnectionProfile)?.ApiKey ?? "",
+            AiProfiles = _settings.AiProfiles,
+            ActiveAiProfileId = (TranslationAiProfileComboBox.SelectedItem as AiConnectionProfile)?.Id ?? "",
+            ActiveAnalysisAiProfileId = (AnalysisAiProfileComboBox.SelectedItem as AiConnectionProfile)?.Id ?? "",
+            TranslationPromptProfiles = _settings.TranslationPromptProfiles,
+            ActiveTranslationPromptProfileId = translationPromptProfile?.Id ?? "",
+            AnalysisPromptProfiles = _settings.AnalysisPromptProfiles,
+            ActiveAnalysisPromptProfileId = analysisPromptProfile?.Id ?? "",
             TranslationProvider = EnableHttpProviderSwitch.IsChecked == true
                 ? TranslationProviderKind.HttpTranslation
                 : TranslationProviderKind.OpenAiCompatible,
             TranslationHttpProfiles = _settings.TranslationHttpProfiles,
             ActiveTranslationHttpProfileId = (HttpTranslationProfileComboBox.SelectedItem as TranslationHttpProfile)?.Id ?? "",
-            SpeechEndpoint = SpeechEndpointBox.Text?.Trim() ?? "",
+            SpeechEndpoint = speechAiProfile?.Endpoint ?? "",
             SpeechProvider = EnableSpeechHttpSwitch.IsChecked == true
                 ? SpeechProviderKind.GenericHttp
                 : SpeechProviderKind.OpenAiCompatible,
-            SpeechModel = SpeechModelBox.Text?.Trim() ?? "",
-            SpeechApiKey = SpeechApiKeyBox.Text?.Trim() ?? "",
-            SpeechVoice = SpeechVoiceBox.Text?.Trim() ?? "",
+            SpeechModel = speechAiProfile?.Model ?? "",
+            SpeechApiKey = speechAiProfile?.ApiKey ?? "",
+            SpeechVoice = speechAiProfile?.Voice ?? "",
+            SpeechAiProfiles = _settings.SpeechAiProfiles,
+            ActiveSpeechAiProfileId = speechAiProfile?.Id ?? "",
             HttpSpeechEndpoint = "",
             HttpSpeechModel = "",
             HttpSpeechApiKey = "",
@@ -258,13 +271,15 @@ public partial class MainWindow : Window
             SpeechHttpProfiles = _settings.SpeechHttpProfiles,
             ActiveSpeechHttpProfileId = (HttpSpeechProfileComboBox.SelectedItem as SpeechHttpProfile)?.Id ?? "",
             RealTimeSpeechEnabled = RealTimeSpeechCheckBox.IsChecked == true,
-            SystemPrompt = SystemPromptBox.Text?.Trim() ?? "",
+            SystemPrompt = translationPromptProfile?.Prompt ?? "",
+            DeepAnalysisPrompt = analysisPromptProfile?.Prompt ?? "",
             TranslateOnTextChange = TranslateOnTextChangeCheckBox.IsChecked == true,
             TranslateOnSentenceEnd = TranslateOnSentenceEndCheckBox.IsChecked == true,
             TranslateAfterInactivity = TranslateAfterInactivityCheckBox.IsChecked == true,
             InactivityDelaySeconds = inactivityDelaySeconds,
             MaximumTranslationCharacters = maximumTranslationCharacters
         };
+        UpdateDeepAnalysisAvailability();
         ApplyTranslationTriggerSettings();
         _settingsStore.Save(_settings);
         var validationIssues = new List<string>();
@@ -283,16 +298,13 @@ public partial class MainWindow : Window
 
     private void AttachAutoSaveHandlers()
     {
-        EndpointBox.TextChanged += SettingsText_Changed;
-        ModelBox.TextChanged += SettingsText_Changed;
-        ApiKeyBox.TextChanged += SettingsText_Changed;
+        TranslationAiProfileComboBox.SelectionChanged += TranslationAiProfile_Changed;
+        AnalysisAiProfileComboBox.SelectionChanged += AnalysisAiProfile_Changed;
+        TranslationPromptProfileComboBox.SelectionChanged += TranslationPromptProfile_Changed;
+        AnalysisPromptProfileComboBox.SelectionChanged += AnalysisPromptProfile_Changed;
         HttpTranslationProfileComboBox.SelectionChanged += HttpTranslationProfile_Changed;
-        SpeechEndpointBox.TextChanged += SettingsText_Changed;
-        SpeechModelBox.TextChanged += SettingsText_Changed;
-        SpeechApiKeyBox.TextChanged += SettingsText_Changed;
-        SpeechVoiceBox.TextChanged += SettingsText_Changed;
+        SpeechAiProfileComboBox.SelectionChanged += SpeechAiProfile_Changed;
         HttpSpeechProfileComboBox.SelectionChanged += HttpSpeechProfile_Changed;
-        SystemPromptBox.TextChanged += SettingsText_Changed;
         InactivityDelaySecondsBox.TextChanged += SettingsText_Changed;
         MaximumTranslationCharactersBox.TextChanged += MaximumTranslationCharactersBox_TextChanged;
         MaximumTranslationCharactersBox.TextInput += MaximumTranslationCharactersBox_TextInput;
@@ -357,6 +369,106 @@ public partial class MainWindow : Window
     private void HttpTranslationProfile_Changed(object? sender, SelectionChangedEventArgs e)
         => ScheduleAutoSave();
 
+    private void TranslationAiProfile_Changed(object? sender, SelectionChangedEventArgs e)
+    {
+        if (TranslationAiProfileComboBox.SelectedItem is AiConnectionProfile selected)
+        {
+            _settings.ActiveAiProfileId = selected.Id;
+            _settings.Endpoint = selected.Endpoint;
+            _settings.Model = selected.Model;
+            _settings.ApiKey = selected.ApiKey;
+        }
+        ScheduleAutoSave();
+    }
+
+    private void AnalysisAiProfile_Changed(object? sender, SelectionChangedEventArgs e)
+    {
+        if (AnalysisAiProfileComboBox.SelectedItem is AiConnectionProfile selected)
+            _settings.ActiveAnalysisAiProfileId = selected.Id;
+        UpdateDeepAnalysisAvailability();
+        ScheduleAutoSave();
+    }
+
+    private void SpeechAiProfile_Changed(object? sender, SelectionChangedEventArgs e)
+        => ScheduleAutoSave();
+
+    private void TranslationPromptProfile_Changed(object? sender, SelectionChangedEventArgs e)
+    {
+        if (TranslationPromptProfileComboBox.SelectedItem is PromptProfile selected)
+        {
+            _settings.ActiveTranslationPromptProfileId = selected.Id;
+            _settings.SystemPrompt = selected.Prompt;
+        }
+        ScheduleAutoSave();
+    }
+
+    private void AnalysisPromptProfile_Changed(object? sender, SelectionChangedEventArgs e)
+    {
+        if (AnalysisPromptProfileComboBox.SelectedItem is PromptProfile selected)
+        {
+            _settings.ActiveAnalysisPromptProfileId = selected.Id;
+            _settings.DeepAnalysisPrompt = selected.Prompt;
+        }
+        UpdateDeepAnalysisAvailability();
+        ScheduleAutoSave();
+    }
+
+    private async void ManageAiProfiles_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        SaveSettings();
+        var editor = new AiConnectionProfilesWindow(_settings.AiProfiles, _settings.ActiveAiProfileId);
+        var saved = await editor.ShowDialog<bool>(this);
+        if (!saved) return;
+
+        var translationProfileId = _settings.ActiveAiProfileId;
+        var analysisProfileId = _settings.ActiveAnalysisAiProfileId;
+        _settings.AiProfiles = editor.Profiles.Select(profile => profile.Copy()).ToList();
+        if (!_settings.AiProfiles.Any(profile => profile.Id == translationProfileId))
+            translationProfileId = editor.SelectedProfileId;
+        if (!_settings.AiProfiles.Any(profile => profile.Id == analysisProfileId))
+            analysisProfileId = translationProfileId;
+        _settings.ActiveAiProfileId = translationProfileId;
+        _settings.ActiveAnalysisAiProfileId = analysisProfileId;
+        TranslationAiProfileComboBox.ItemsSource = null;
+        TranslationAiProfileComboBox.ItemsSource = _settings.AiProfiles;
+        TranslationAiProfileComboBox.SelectedItem = _settings.ActiveAiProfile;
+        AnalysisAiProfileComboBox.ItemsSource = null;
+        AnalysisAiProfileComboBox.ItemsSource = _settings.AiProfiles;
+        AnalysisAiProfileComboBox.SelectedItem = _settings.ActiveAnalysisAiProfile;
+        SaveSettings();
+    }
+
+    private async void ManagePromptProfiles_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        SaveSettings();
+        var editor = new PromptProfilesWindow(
+            _settings.TranslationPromptProfiles,
+            _settings.ActiveTranslationPromptProfileId,
+            _settings.AnalysisPromptProfiles,
+            _settings.ActiveAnalysisPromptProfileId);
+        var saved = await editor.ShowDialog<bool>(this);
+        if (!saved) return;
+
+        var translationPromptId = _settings.ActiveTranslationPromptProfileId;
+        var analysisPromptId = _settings.ActiveAnalysisPromptProfileId;
+        _settings.TranslationPromptProfiles = editor.TranslationProfiles.Select(profile => profile.Copy()).ToList();
+        _settings.AnalysisPromptProfiles = editor.AnalysisProfiles.Select(profile => profile.Copy()).ToList();
+        if (!_settings.TranslationPromptProfiles.Any(profile => profile.Id == translationPromptId))
+            translationPromptId = _settings.TranslationPromptProfiles[0].Id;
+        if (!_settings.AnalysisPromptProfiles.Any(profile => profile.Id == analysisPromptId))
+            analysisPromptId = _settings.AnalysisPromptProfiles[0].Id;
+        _settings.ActiveTranslationPromptProfileId = translationPromptId;
+        _settings.ActiveAnalysisPromptProfileId = analysisPromptId;
+
+        TranslationPromptProfileComboBox.ItemsSource = null;
+        TranslationPromptProfileComboBox.ItemsSource = _settings.TranslationPromptProfiles;
+        TranslationPromptProfileComboBox.SelectedItem = _settings.ActiveTranslationPromptProfile;
+        AnalysisPromptProfileComboBox.ItemsSource = null;
+        AnalysisPromptProfileComboBox.ItemsSource = _settings.AnalysisPromptProfiles;
+        AnalysisPromptProfileComboBox.SelectedItem = _settings.ActiveAnalysisPromptProfile;
+        SaveSettings();
+    }
+
     private async void ManageTranslationHttpProfiles_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         SaveSettings();
@@ -389,6 +501,26 @@ public partial class MainWindow : Window
         SaveSettings();
     }
 
+    private async void ManageSpeechAiProfiles_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        SaveSettings();
+        var editor = new SpeechAiConnectionProfilesWindow(
+            _settings.SpeechAiProfiles,
+            _settings.ActiveSpeechAiProfileId);
+        var saved = await editor.ShowDialog<bool>(this);
+        if (!saved) return;
+
+        var activeProfileId = _settings.ActiveSpeechAiProfileId;
+        _settings.SpeechAiProfiles = editor.Profiles.Select(profile => profile.Copy()).ToList();
+        if (!_settings.SpeechAiProfiles.Any(profile => profile.Id == activeProfileId))
+            activeProfileId = editor.SelectedProfileId;
+        _settings.ActiveSpeechAiProfileId = activeProfileId;
+        SpeechAiProfileComboBox.ItemsSource = null;
+        SpeechAiProfileComboBox.ItemsSource = _settings.SpeechAiProfiles;
+        SpeechAiProfileComboBox.SelectedItem = _settings.ActiveSpeechAiProfile;
+        SaveSettings();
+    }
+
     private void ScheduleAutoSave()
     {
         _autoSaveTimer.Stop();
@@ -399,16 +531,6 @@ public partial class MainWindow : Window
     {
         _autoSaveTimer.Stop();
         SaveSettings();
-    }
-
-    private void ToggleApiKeyVisibility_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        _apiKeyVisible = !_apiKeyVisible;
-        ApiKeyBox.PasswordChar = _apiKeyVisible ? '\0' : '●';
-        ApiKeyEyeSlash.IsVisible = _apiKeyVisible;
-        Avalonia.Controls.ToolTip.SetTip(
-            ApiKeyVisibilityButton,
-            _apiKeyVisible ? "隐藏 API Key" : "显示 API Key");
     }
 
     private void TranslationProviderSwitch_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -451,6 +573,9 @@ public partial class MainWindow : Window
         TestProviderLabel.Text = httpTranslationSelected ? "当前：HTTP 接入" : "当前：AI 接入";
     }
 
+    private void UpdateDeepAnalysisAvailability()
+        => _overlay.SetDeepAnalysisAvailable(_settings.IsDeepAnalysisConfigured);
+
     private void SpeechProviderSwitch_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_updatingSpeechProviderControls) return;
@@ -488,16 +613,6 @@ public partial class MainWindow : Window
         var httpSpeechSelected = EnableSpeechHttpSwitch.IsChecked == true;
         SpeechAiProviderCheckMark.IsVisible = !httpSpeechSelected;
         SpeechHttpProviderCheckMark.IsVisible = httpSpeechSelected;
-    }
-
-    private void ToggleSpeechApiKeyVisibility_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        _speechApiKeyVisible = !_speechApiKeyVisible;
-        SpeechApiKeyBox.PasswordChar = _speechApiKeyVisible ? '\0' : '●';
-        SpeechApiKeyEyeSlash.IsVisible = _speechApiKeyVisible;
-        Avalonia.Controls.ToolTip.SetTip(
-            SpeechApiKeyVisibilityButton,
-            _speechApiKeyVisible ? "隐藏 API Key" : "显示 API Key");
     }
 
     private void RealTimeSpeech_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -557,6 +672,31 @@ public partial class MainWindow : Window
 
     private void WindowSurface_PointerPressed(object? sender, PointerPressedEventArgs e)
         => WindowChrome.BeginMoveDrag(this, e);
+
+    private void ResizeGrip_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not Avalonia.Controls.Control { Tag: string direction }) return;
+        _windowResizeSession = BorderlessWindowResizeSession.TryBegin(this, e, direction);
+        if (_windowResizeSession is null) return;
+
+        e.Pointer.Capture(this);
+        e.Handled = true;
+    }
+
+    private void WindowSurface_PointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_windowResizeSession is null) return;
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            _windowResizeSession = null;
+            return;
+        }
+
+        _windowResizeSession.Update();
+    }
+
+    private void WindowSurface_PointerReleased(object? sender, PointerReleasedEventArgs e)
+        => _windowResizeSession = null;
 
     private void MinimizeWindow_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => WindowState = Avalonia.Controls.WindowState.Minimized;
@@ -792,21 +932,69 @@ public partial class MainWindow : Window
         MonitorStateText.Text = $"{_monitorStateLabel} · {(long)elapsed.TotalHours:00}:{elapsed.Minutes:00}:{elapsed.Seconds:00}";
     }
 
+    private static string GetLatestSentence(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return text;
+
+        var sentenceStart = 0;
+        string? latestSentence = null;
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (!IsSpeechSentenceBoundary(text, i)) continue;
+
+            var sentenceEnd = i + 1;
+            while (sentenceEnd < text.Length
+                   && (IsSpeechSentencePunctuation(text[sentenceEnd])
+                       || IsClosingSentenceQuote(text[sentenceEnd])))
+                sentenceEnd++;
+
+            var completedSentence = text[sentenceStart..sentenceEnd].Trim();
+            if (completedSentence.Length > 0) latestSentence = completedSentence;
+            sentenceStart = sentenceEnd;
+            i = sentenceEnd - 1;
+        }
+
+        var trailingText = text[sentenceStart..].Trim();
+        return trailingText.Length > 0 ? trailingText : latestSentence ?? text.Trim();
+    }
+
+    private static bool IsSpeechSentenceBoundary(string text, int index)
+    {
+        var character = text[index];
+        if (character is '\r' or '\n' or '，' or ',' or '：' or ':' or '。' or '！' or '？' or '!' or '?' or '…')
+            return true;
+        if (character != '.') return false;
+
+        var next = index + 1;
+        while (next < text.Length && IsClosingSentenceQuote(text[next])) next++;
+        return next == text.Length || char.IsWhiteSpace(text[next]);
+    }
+
+    private static bool IsSpeechSentencePunctuation(char character)
+        => character is ',' or '，' or ':' or '：' or '.' or '。' or '！' or '？' or '!' or '?' or '…' or '\r' or '\n';
+
+    private static bool IsClosingSentenceQuote(char character)
+        => character is '"' or '\'' or '”' or '’' or '」' or '』' or '）' or ')' or '】' or ']';
+
     private void OnSpeechRequested(string text)
         => Dispatcher.UIThread.Post(() => StartSpeechPlayback(text), DispatcherPriority.Background);
 
     private void StartSpeechPlayback(string text)
     {
         CancelSpeechPlayback();
+        var speechAiProfile = SpeechAiProfileComboBox.SelectedItem as SpeechAiConnectionProfile
+            ?? _settings.ActiveSpeechAiProfile;
         var settings = new AppSettings
         {
-            SpeechEndpoint = SpeechEndpointBox.Text?.Trim() ?? "",
+            SpeechEndpoint = speechAiProfile?.Endpoint ?? "",
             SpeechProvider = EnableSpeechHttpSwitch.IsChecked == true
                 ? SpeechProviderKind.GenericHttp
                 : SpeechProviderKind.OpenAiCompatible,
-            SpeechModel = SpeechModelBox.Text?.Trim() ?? "",
-            SpeechApiKey = SpeechApiKeyBox.Text?.Trim() ?? "",
-            SpeechVoice = SpeechVoiceBox.Text?.Trim() ?? "",
+            SpeechModel = speechAiProfile?.Model ?? "",
+            SpeechApiKey = speechAiProfile?.ApiKey ?? "",
+            SpeechVoice = speechAiProfile?.Voice ?? "",
+            SpeechAiProfiles = _settings.SpeechAiProfiles,
+            ActiveSpeechAiProfileId = speechAiProfile?.Id ?? "",
             HttpSpeechEndpoint = "",
             HttpSpeechModel = "",
             HttpSpeechApiKey = "",
@@ -948,7 +1136,7 @@ public partial class MainWindow : Window
                         _overlay.ShowAt(text.Bounds, translated);
                         SetStatus($"翻译完成 · 接口耗时：{stopwatch.Elapsed.TotalMilliseconds:F0} ms");
                         if (RealTimeSpeechCheckBox.IsChecked == true)
-                            StartSpeechPlayback(translated);
+                            StartSpeechPlayback(GetLatestSentence(translated));
                     }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

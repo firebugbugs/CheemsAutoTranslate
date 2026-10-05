@@ -53,7 +53,8 @@
     <Grid RowDefinitions="40,*">
       <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="10,2,8,0">
         <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-          <Image Source="/Assets/translator_icon.png" Width="20" Height="20" Stretch="Uniform" />
+          <Image Source="/Assets/translator_icon.png" Width="20" Height="20" Stretch="Uniform"
+                 RenderOptions.BitmapInterpolationMode="HighQuality" VerticalAlignment="Center" />
           <TextBlock Text="每日统计" FontSize="13" Foreground="#756B63" VerticalAlignment="Center" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3" VerticalAlignment="Center">

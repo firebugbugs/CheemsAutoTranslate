@@ -36,7 +36,8 @@
     <Grid RowDefinitions="Auto,*,Auto" RowSpacing="16">
       <StackPanel x:Name="TitleBar" Orientation="Horizontal" Spacing="9"
                   VerticalAlignment="Center" PointerPressed="TitleBar_PointerPressed">
-        <Image Source="/Assets/translator_icon.png" Width="21" Height="21" Stretch="Uniform" />
+        <Image Source="/Assets/translator_icon.png" Width="20" Height="20" Stretch="Uniform"
+               RenderOptions.BitmapInterpolationMode="HighQuality" VerticalAlignment="Center" />
         <TextBlock Text="预设已应用" FontSize="15" FontWeight="SemiBold" Foreground="#493F38"
                    VerticalAlignment="Center" />
       </StackPanel>

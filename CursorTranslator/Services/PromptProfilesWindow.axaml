@@ -1,0 +1,85 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:CursorTranslator.Services"
+        x:Class="CursorTranslator.Services.PromptProfilesWindow"
+        Title="提示词管理" Width="900" Height="680" MinWidth="760" MinHeight="560"
+        WindowStartupLocation="CenterOwner" CanResize="True" SystemDecorations="None"
+        Background="Transparent" TransparencyLevelHint="Transparent" Foreground="#302B27">
+  <Window.Styles>
+    <StyleInclude Source="avares://CursorTranslator/Assets/HttpManagementStyles.axaml" />
+  </Window.Styles>
+
+  <Border Classes="management-window-surface" PointerPressed="WindowSurface_PointerPressed">
+    <Grid RowDefinitions="40,Auto,*,Auto">
+      <controls:ManagementWindowTitleBar Grid.Row="0" Title="提示词管理" />
+
+      <Grid Classes="management-window-heading-row" Grid.Row="1">
+        <StackPanel Spacing="3">
+          <TextBlock Text="提示词档案" Classes="management-window-heading" />
+          <TextBlock Classes="management-window-description" Text="分别维护翻译和解析提示词；主页面可独立选择各自使用的档案。" />
+        </StackPanel>
+      </Grid>
+
+      <Grid Classes="management-window-content-row" Grid.Row="2" ColumnDefinitions="224,*" ColumnSpacing="14">
+        <Border Classes="management-window-sidebar">
+          <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
+            <StackPanel Spacing="8">
+              <TextBlock Classes="management-window-section-heading" Text="提示词类型" />
+              <ComboBox x:Name="PromptKindComboBox" SelectionChanged="PromptKind_SelectionChanged" />
+              <TextBlock Text="选择类型后，可为它创建多套提示词。" FontSize="11" Foreground="#81766D"
+                         TextWrapping="Wrap" />
+            </StackPanel>
+            <ListBox x:Name="ProfileListBox" Grid.Row="1" Classes="profile-list"
+                     SelectionChanged="ProfileList_SelectionChanged">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Spacing="4">
+                    <TextBlock Classes="profile-name" Text="{Binding Name}" FontSize="13" FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Classes="profile-subtitle" Text="{Binding Prompt}" FontSize="11"
+                               TextTrimming="CharacterEllipsis" MaxLines="2" />
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="8">
+              <Button Content="＋ 新建提示词" Click="NewProfile_Click" />
+              <Button Grid.Column="1" Content="删除" Classes="secondary" Click="DeleteProfile_Click" />
+            </Grid>
+          </Grid>
+        </Border>
+
+        <Border Grid.Column="1" Classes="management-window-editor">
+          <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
+            <StackPanel Spacing="3">
+              <TextBlock Text="提示词内容" FontSize="15" FontWeight="SemiBold" />
+              <TextBlock Text="变量和具体要求由提示词本身决定；保存后可在主页面选择。"
+                         FontSize="11" Foreground="#756B63" TextWrapping="Wrap" />
+            </StackPanel>
+            <StackPanel Grid.Row="1" Spacing="4">
+              <TextBlock Text="名称" FontSize="11" Foreground="#756B63" />
+              <TextBox x:Name="ProfileNameBox" Watermark="例如：自然英语翻译、词汇解析" />
+            </StackPanel>
+            <Grid Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="4">
+              <TextBlock Text="提示词" FontSize="11" Foreground="#756B63" />
+              <TextBox x:Name="PromptBox" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap"
+                       VerticalContentAlignment="Top" VerticalAlignment="Stretch" MinHeight="0"
+                       ScrollViewer.VerticalScrollBarVisibility="Auto"
+                       ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                       Watermark="输入发送给 AI 的提示词" />
+            </Grid>
+            <TextBlock x:Name="ErrorText" Grid.Row="3" Foreground="#B42318" FontSize="11"
+                       TextWrapping="Wrap" IsVisible="False" />
+          </Grid>
+        </Border>
+      </Grid>
+
+      <Grid Classes="management-window-footer" Grid.Row="3" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+        <TextBlock Text="切换类型或档案时会自动保存当前编辑内容。" VerticalAlignment="Center"
+                   Foreground="#756B63" FontSize="11" />
+        <Button Grid.Column="1" Content="取消" Classes="secondary" Click="Cancel_Click" />
+        <Button Grid.Column="2" Content="保存" Click="Save_Click" />
+      </Grid>
+    </Grid>
+  </Border>
+</Window>

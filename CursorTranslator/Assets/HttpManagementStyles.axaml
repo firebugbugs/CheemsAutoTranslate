@@ -1,0 +1,174 @@
+<Styles xmlns="https://github.com/avaloniaui">
+  <Style Selector="Border.management-window-surface">
+    <Setter Property="Margin" Value="8" />
+    <Setter Property="CornerRadius" Value="14" />
+    <Setter Property="Background" Value="#FAF8F5" />
+    <Setter Property="BorderBrush" Value="#DCD2C8" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="ClipToBounds" Value="True" />
+  </Style>
+  <Style Selector="Grid.management-window-titlebar">
+    <Setter Property="Margin" Value="10,2,8,0" />
+  </Style>
+  <Style Selector="Image.management-window-icon">
+    <Setter Property="Width" Value="20" />
+    <Setter Property="Height" Value="20" />
+    <Setter Property="Stretch" Value="Uniform" />
+  </Style>
+  <Style Selector="TextBlock.management-window-title">
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Foreground" Value="#756B63" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Grid.management-window-heading-row">
+    <Setter Property="Margin" Value="20,2,20,12" />
+  </Style>
+  <Style Selector="TextBlock.management-window-heading">
+    <Setter Property="FontSize" Value="20" />
+    <Setter Property="FontWeight" Value="Bold" />
+  </Style>
+  <Style Selector="TextBlock.management-window-description">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="#756B63" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="Grid.management-window-content-row">
+    <Setter Property="Margin" Value="20,0,20,12" />
+  </Style>
+  <Style Selector="Border.management-window-sidebar">
+    <Setter Property="Padding" Value="12" />
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="Background" Value="#F6F2ED" />
+    <Setter Property="BorderBrush" Value="#E5DCD2" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Border.management-window-editor">
+    <Setter Property="Padding" Value="14" />
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="Background" Value="#FFFEFC" />
+    <Setter Property="BorderBrush" Value="#E5DCD2" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="TextBlock.management-window-section-heading">
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TextBlock.management-window-section-description">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="#81766D" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="Grid.management-window-footer">
+    <Setter Property="Margin" Value="20,0,20,16" />
+  </Style>
+
+  <Style Selector="TextBox">
+    <Setter Property="Background" Value="#FFFEFC" />
+    <Setter Property="Foreground" Value="#302B27" />
+    <Setter Property="BorderBrush" Value="#E6DED5" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="9,6" />
+    <Setter Property="MinHeight" Value="36" />
+    <Setter Property="FontSize" Value="13" />
+  </Style>
+  <Style Selector="TextBox:focus">
+    <Setter Property="BorderBrush" Value="#B65D3B" />
+  </Style>
+  <Style Selector="ComboBox">
+    <Setter Property="Background" Value="#FFFEFC" />
+    <Setter Property="Foreground" Value="#302B27" />
+    <Setter Property="BorderBrush" Value="#E6DED5" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="MinHeight" Value="36" />
+    <Setter Property="FontSize" Value="13" />
+  </Style>
+  <Style Selector="Button">
+    <Setter Property="Background" Value="#A95032" />
+    <Setter Property="Foreground" Value="#FFFFFF" />
+    <Setter Property="BorderBrush" Value="#A95032" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="12,7" />
+    <Setter Property="MinHeight" Value="36" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="Button:pointerover">
+    <Setter Property="Background" Value="#914329" />
+    <Setter Property="BorderBrush" Value="#914329" />
+  </Style>
+  <Style Selector="Button.secondary">
+    <Setter Property="Background" Value="#F7F1EB" />
+    <Setter Property="Foreground" Value="#684B3C" />
+    <Setter Property="BorderBrush" Value="#E7D8CA" />
+  </Style>
+  <Style Selector="ListBox.profile-list">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+  </Style>
+  <Style Selector="ListBox.profile-list ListBoxItem">
+    <Setter Property="Background" Value="#FFFEFC" />
+    <Setter Property="Foreground" Value="#302B27" />
+    <Setter Property="BorderBrush" Value="#E9E0D7" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Padding" Value="11,9" />
+    <Setter Property="Margin" Value="0,0,0,7" />
+    <Setter Property="MinHeight" Value="56" />
+  </Style>
+  <Style Selector="ListBox.profile-list ListBoxItem:pointerover">
+    <Setter Property="Background" Value="#F8F2EC" />
+    <Setter Property="BorderBrush" Value="#DCCABD" />
+  </Style>
+  <Style Selector="ListBox.profile-list ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="#FBF4EE" />
+  </Style>
+  <Style Selector="ListBox.profile-list ListBoxItem:selected">
+    <Setter Property="BorderBrush" Value="#CF8D6B" />
+    <Setter Property="BorderThickness" Value="1.5" />
+  </Style>
+  <Style Selector="ListBox.profile-list ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="#F4E3D6" />
+    <Setter Property="Foreground" Value="#713F2D" />
+  </Style>
+  <Style Selector="ListBox.profile-list TextBlock.profile-name">
+    <Setter Property="Foreground" Value="#302B27" />
+  </Style>
+  <Style Selector="ListBox.profile-list ListBoxItem:selected TextBlock.profile-name">
+    <Setter Property="Foreground" Value="#713F2D" />
+    <Setter Property="FontWeight" Value="Bold" />
+  </Style>
+  <Style Selector="ListBox.profile-list TextBlock.profile-subtitle">
+    <Setter Property="Foreground" Value="#756B63" />
+  </Style>
+  <Style Selector="ListBox.profile-list ListBoxItem:selected TextBlock.profile-subtitle">
+    <Setter Property="Foreground" Value="#8C6653" />
+  </Style>
+  <Style Selector="ListBox.profile-list Button.profile-delete">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="#A95032" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Width" Value="26" />
+    <Setter Property="Height" Value="26" />
+    <Setter Property="MinWidth" Value="26" />
+    <Setter Property="MinHeight" Value="26" />
+    <Setter Property="Opacity" Value="0" />
+    <Setter Property="IsHitTestVisible" Value="False" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="ListBox.profile-list ListBoxItem:pointerover Button.profile-delete">
+    <Setter Property="Opacity" Value="1" />
+    <Setter Property="IsHitTestVisible" Value="True" />
+  </Style>
+  <Style Selector="ListBox.profile-list Button.profile-delete:pointerover">
+    <Setter Property="Background" Value="#FBE9E5" />
+    <Setter Property="BorderBrush" Value="#E9C4B7" />
+  </Style>
+</Styles>

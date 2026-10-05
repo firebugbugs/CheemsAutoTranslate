@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:CursorTranslator.Services"
         x:Class="CursorTranslator.Services.SpeechHttpProfilesWindow"
         Icon="/Assets/translator_icon.ico"
         Title="HTTP 语音接口档案" Width="1080" Height="790"
@@ -9,168 +10,39 @@
         Background="Transparent" TransparencyLevelHint="Transparent"
         Foreground="#302B27">
   <Window.Styles>
-    <Style Selector="TextBox">
-      <Setter Property="Background" Value="#FFFEFC" />
-      <Setter Property="Foreground" Value="#302B27" />
-      <Setter Property="BorderBrush" Value="#E6DED5" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="Padding" Value="9,6" />
-      <Setter Property="MinHeight" Value="36" />
-      <Setter Property="FontSize" Value="13" />
-    </Style>
-    <Style Selector="TextBox:focus">
-      <Setter Property="BorderBrush" Value="#B65D3B" />
-    </Style>
-    <Style Selector="ComboBox">
-      <Setter Property="Background" Value="#FFFEFC" />
-      <Setter Property="Foreground" Value="#302B27" />
-      <Setter Property="BorderBrush" Value="#E6DED5" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="MinHeight" Value="36" />
-      <Setter Property="FontSize" Value="13" />
-    </Style>
-    <Style Selector="Button">
-      <Setter Property="Background" Value="#A95032" />
-      <Setter Property="Foreground" Value="#FFFFFF" />
-      <Setter Property="BorderBrush" Value="#A95032" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="Padding" Value="12,7" />
-      <Setter Property="MinHeight" Value="36" />
-      <Setter Property="FontSize" Value="13" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
-    <Style Selector="Button:pointerover">
-      <Setter Property="Background" Value="#914329" />
-      <Setter Property="BorderBrush" Value="#914329" />
-    </Style>
-    <Style Selector="Button.secondary">
-      <Setter Property="Background" Value="#F7F1EB" />
-      <Setter Property="Foreground" Value="#684B3C" />
-      <Setter Property="BorderBrush" Value="#E7D8CA" />
-    </Style>
-    <Style Selector="ListBox.profile-list">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="0" />
-    </Style>
-    <Style Selector="ListBox.profile-list ListBoxItem">
-      <Setter Property="Background" Value="#FFFEFC" />
-      <Setter Property="Foreground" Value="#302B27" />
-      <Setter Property="BorderBrush" Value="#E9E0D7" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="10" />
-      <Setter Property="Padding" Value="11,9" />
-      <Setter Property="Margin" Value="0,0,0,7" />
-      <Setter Property="MinHeight" Value="56" />
-    </Style>
-    <Style Selector="ListBox.profile-list ListBoxItem:pointerover">
-      <Setter Property="Background" Value="#F8F2EC" />
-      <Setter Property="BorderBrush" Value="#DCCABD" />
-    </Style>
-    <Style Selector="ListBox.profile-list ListBoxItem:selected">
-      <Setter Property="Background" Value="#EAF3F8" />
-      <Setter Property="BorderBrush" Value="#9CC2D7" />
-      <Setter Property="Foreground" Value="#254A60" />
-    </Style>
-    <Style Selector="ListBox.profile-list Button.profile-delete">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="#A95032" />
-      <Setter Property="BorderBrush" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="6" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="Width" Value="26" />
-      <Setter Property="Height" Value="26" />
-      <Setter Property="MinWidth" Value="26" />
-      <Setter Property="MinHeight" Value="26" />
-      <Setter Property="Opacity" Value="0" />
-      <Setter Property="IsHitTestVisible" Value="False" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
-    </Style>
-    <Style Selector="ListBox.profile-list ListBoxItem:pointerover Button.profile-delete">
-      <Setter Property="Opacity" Value="1" />
-      <Setter Property="IsHitTestVisible" Value="True" />
-    </Style>
-    <Style Selector="ListBox.profile-list Button.profile-delete:pointerover">
-      <Setter Property="Background" Value="#FBE9E5" />
-      <Setter Property="BorderBrush" Value="#E9C4B7" />
-    </Style>
+    <StyleInclude Source="avares://CursorTranslator/Assets/HttpManagementStyles.axaml" />
   </Window.Styles>
 
-  <Border Margin="8" CornerRadius="14" Background="#FAF8F5"
-          BorderBrush="#DCD2C8" BorderThickness="1" ClipToBounds="True"
-          PointerPressed="WindowSurface_PointerPressed">
+  <Border Classes="management-window-surface" PointerPressed="WindowSurface_PointerPressed">
     <Grid RowDefinitions="40,Auto,*,Auto">
-      <Grid x:Name="TitleBar" Grid.Row="0" ColumnDefinitions="*,Auto" Margin="10,2,8,0">
-        <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-          <Image Source="/Assets/translator_icon.png" Width="20" Height="20" Stretch="Uniform" />
-          <TextBlock Text="HTTP 语音接口档案" FontSize="13" Foreground="#756B63" VerticalAlignment="Center" />
-        </StackPanel>
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3" VerticalAlignment="Center">
-          <Button x:Name="MinimizeWindowButton" Classes="window-control" ToolTip.Tip="最小化"
-                  Click="Minimize_Click">
-            <Grid Width="18" Height="18">
-              <Path Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
-                    Fill="{Binding #MinimizeWindowButton.Foreground}"
-                    Data="{StaticResource WindowMinimizeGeometry}" />
-            </Grid>
-          </Button>
-          <Button x:Name="MaximizeButton" Classes="window-control" ToolTip.Tip="最大化"
-                  Click="Maximize_Click">
-            <Grid Width="18" Height="18">
-              <Path x:Name="MaximizeIcon" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
-                    Fill="{Binding #MaximizeButton.Foreground}"
-                    Data="{StaticResource WindowMaximizeGeometry}" />
-              <Path x:Name="RestoreIcon" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
-                    Fill="{Binding #MaximizeButton.Foreground}" IsVisible="False"
-                    Data="{StaticResource WindowRestoreGeometry}" />
-            </Grid>
-          </Button>
-          <Button x:Name="CloseWindowButton" Classes="window-control close" ToolTip.Tip="关闭窗口"
-                  Click="CloseWindow_Click">
-            <Grid Width="18" Height="18">
-              <Path Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
-                    Fill="{Binding #CloseWindowButton.Foreground}"
-                    Data="{StaticResource WindowCloseGeometry}" />
-            </Grid>
-          </Button>
-        </StackPanel>
-      </Grid>
+      <controls:ManagementWindowTitleBar Grid.Row="0" Title="HTTP 语音接口档案" />
 
-      <Grid Grid.Row="1" Margin="20,2,20,12" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+      <Grid Classes="management-window-heading-row" Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="12">
         <StackPanel Spacing="3">
-          <TextBlock Text="HTTP 语音接口" FontSize="20" FontWeight="Bold" />
-          <TextBlock Text="先选一个预设填入基础信息，之后仍可继续调整成任何兼容的 HTTP 服务。"
-                     FontSize="12" Foreground="#756B63" TextWrapping="Wrap" />
+          <TextBlock Text="HTTP 语音接口" Classes="management-window-heading" />
         </StackPanel>
       </Grid>
 
-      <Grid Grid.Row="2" Margin="20,0,20,12" ColumnDefinitions="224,*" ColumnSpacing="14">
-        <Border Padding="12" CornerRadius="12" Background="#F6F2ED" BorderBrush="#E5DCD2" BorderThickness="1">
+      <Grid Classes="management-window-content-row" Grid.Row="2" ColumnDefinitions="224,*" ColumnSpacing="14">
+        <Border Classes="management-window-sidebar">
           <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
             <StackPanel Margin="2,2,2,0" Spacing="3">
-              <TextBlock Text="接口档案" FontSize="14" FontWeight="SemiBold" />
-              <TextBlock Text="切换或管理已保存的语音服务" FontSize="11" Foreground="#81766D"
-                         TextWrapping="Wrap" />
+              <TextBlock Classes="management-window-section-heading" Text="接口档案" />
             </StackPanel>
             <ListBox x:Name="ProfileListBox" Grid.Row="1" Classes="profile-list"
                      SelectionChanged="ProfileList_SelectionChanged">
               <ListBox.ItemTemplate>
                 <DataTemplate>
                   <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="4">
-                    <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold"
+                    <TextBlock Classes="profile-name" Text="{Binding Name}" FontSize="13" FontWeight="SemiBold"
                                TextTrimming="CharacterEllipsis" />
                     <Button Grid.Column="1" Classes="profile-delete" ToolTip.Tip="删除此档案"
                             Click="DeleteProfile_Click">
                       <Path Data="M 3,4 L 13,4 M 5,4 L 5,13 L 11,13 L 11,4 M 6,4 L 6,2 L 10,2 L 10,4 M 7,6 L 7,11 M 9,6 L 9,11"
                             Stroke="#A95032" StrokeThickness="1.4" Fill="Transparent" />
                     </Button>
-                    <TextBlock Grid.Row="1" Text="{Binding ProtocolDisplay}" FontSize="10"
-                               Foreground="#81766D" VerticalAlignment="Center" />
+                    <TextBlock Classes="profile-subtitle" Grid.Row="1" Text="{Binding ProtocolDisplay}" FontSize="10"
+                               VerticalAlignment="Center" />
                     <Border Grid.Row="1" Grid.Column="1" Padding="6,2" CornerRadius="6"
                             Background="#F3EEE8" VerticalAlignment="Center">
                       <TextBlock Text="{Binding Response.Format}" FontSize="10" Foreground="#756B63" />
@@ -184,8 +56,7 @@
           </Grid>
         </Border>
 
-        <Border Grid.Column="1" Padding="14" CornerRadius="12" Background="#FFFEFC"
-                BorderBrush="#E5DCD2" BorderThickness="1">
+        <Border Grid.Column="1" Classes="management-window-editor">
           <TabControl x:Name="EditorTabs" SelectionChanged="EditorTabs_SelectionChanged">
             <TabItem Header="基础设置">
               <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -193,8 +64,6 @@
                   <Border Padding="12" CornerRadius="10" Background="#F8F1E9" BorderBrush="#E9D8C8" BorderThickness="1">
                     <StackPanel Spacing="6">
                         <TextBlock Text="快速开始" FontWeight="SemiBold" FontSize="14" />
-                        <TextBlock Text="选择预设后会自动应用到当前档案；API Key 等账号信息由你自己填写。"
-                                   FontSize="11" Foreground="#756B63" TextWrapping="Wrap" />
                         <ComboBox x:Name="PresetComboBox" SelectedIndex="0"
                                   SelectionChanged="PresetComboBox_SelectionChanged">
                           <ComboBoxItem Content="选择一个预设…" Tag="" />
@@ -203,9 +72,6 @@
                           <ComboBoxItem Content="合我意预设 · GET / MP3" Tag="Hewoyi" />
                           <ComboBoxItem Content="Microsoft Edge TTS · 免费神经语音" Tag="EdgeTts" />
                         </ComboBox>
-                        <TextBlock x:Name="EdgeTtsNoticeText"
-                                   Text="Edge TTS 使用内置在线语音协议，无需 API Key；下方 HTTP 地址、请求方式和鉴权设置不参与请求。可在音色栏填写 Edge 音色 ID。"
-                                   FontSize="11" Foreground="#756B63" TextWrapping="Wrap" IsVisible="False" />
                     </StackPanel>
                   </Border>
 
@@ -342,8 +208,6 @@
                           <TextBox x:Name="ResponseJsonPathBox" Watermark="例如 data.audio_url；留空自动识别" />
                         </StackPanel>
                       </Grid>
-                      <TextBlock Text="请求头、查询参数、请求体、异步任务轮询及 PCM 参数等更多选项，在“高级配置”中编辑。"
-                                 FontSize="11" Foreground="#756B63" TextWrapping="Wrap" />
                     </StackPanel>
                   </Border>
                 </StackPanel>
@@ -351,13 +215,9 @@
             </TabItem>
 
             <TabItem Header="高级配置">
-              <Grid Margin="2,10,2,4" RowDefinitions="Auto,*,Auto,Auto" RowSpacing="9">
+              <Grid Margin="2,10,2,4" RowDefinitions="Auto,*,Auto" RowSpacing="9">
                 <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                  <StackPanel Spacing="3">
-                    <TextBlock Text="完整接口档案" FontSize="14" FontWeight="SemiBold" />
-                    <TextBlock Text="直接调整请求模板、鉴权签名、异步轮询和响应解析。密钥仍单独保存。"
-                               FontSize="11" Foreground="#756B63" TextWrapping="Wrap" />
-                  </StackPanel>
+                  <TextBlock Text="完整接口档案" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
                   <Button Grid.Column="1" Content="复制 JSON" Classes="secondary" Click="CopyProfileJson_Click" />
                   <Button Grid.Column="2" Content="粘贴导入" Classes="secondary" Click="PasteProfileJson_Click" />
                 </Grid>
@@ -367,16 +227,13 @@
                          Watermark="接口档案 JSON" />
                 <TextBlock x:Name="ProfileErrorText" Grid.Row="2" IsVisible="False"
                            Foreground="#B42318" FontSize="11" TextWrapping="Wrap" />
-                <TextBlock Grid.Row="3"
-                           Text="占位符：{{text}}、{{textBase64}}、{{model}}、{{voice}}、{{taskId}}、{{apiKey}}、{{host}}、{{path}}、{{pathAndQuery}}、{{dateRfc1123}}、{{dateIso8601}}、{{signature}}、{{method}}。JSON 路径支持 a.b[0].c。"
-                           FontSize="11" Foreground="#756B63" TextWrapping="Wrap" />
               </Grid>
             </TabItem>
           </TabControl>
         </Border>
       </Grid>
 
-      <Grid Grid.Row="3" Margin="20,0,20,16" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+      <Grid Classes="management-window-footer" Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="10">
         <TextBlock x:Name="FooterErrorText" VerticalAlignment="Center" Foreground="#B42318"
                    FontSize="11" TextWrapping="Wrap" IsVisible="False" />
         <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">

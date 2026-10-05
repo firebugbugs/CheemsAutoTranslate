@@ -24,6 +24,9 @@ public partial class SpeechHttpProfilesWindow : Window
     private int _lastTabIndex;
     private string _previousProfileId = "";
 
+    private void WindowSurface_PointerPressed(object? sender, PointerPressedEventArgs e)
+        => WindowChrome.BeginMoveDrag(this, e);
+
     public IReadOnlyList<SpeechHttpProfile> Profiles => _profiles;
     public string SelectedProfileId => (ProfileListBox.SelectedItem as SpeechHttpProfile)?.Id ?? "";
 
@@ -117,7 +120,6 @@ public partial class SpeechHttpProfilesWindow : Window
     private void LoadBasicFields(SpeechHttpProfile profile)
     {
         ProfileNameBox.Text = profile.Name;
-        EdgeTtsNoticeText.IsVisible = profile.IsEdgeTts;
         EndpointBox.Text = profile.Request.Url;
         ModelBox.Text = profile.Model;
         VoiceBox.Text = profile.Voice;
@@ -472,9 +474,6 @@ public partial class SpeechHttpProfilesWindow : Window
     }
 
     private void Cancel_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => Close(false);
-    private void CloseWindow_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => Close(false);
-    private void Minimize_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => WindowState = WindowState.Minimized;
-
     private void ToggleProfileApiKeyVisibility_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         _profileApiKeyVisible = !_profileApiKeyVisible;
@@ -493,18 +492,6 @@ public partial class SpeechHttpProfilesWindow : Window
         Avalonia.Controls.ToolTip.SetTip(
             ProfileApiSecretVisibilityButton,
             _profileApiSecretVisible ? "隐藏 API Secret" : "显示 API Secret");
-    }
-
-    private void WindowSurface_PointerPressed(object? sender, PointerPressedEventArgs e)
-        => WindowChrome.BeginMoveDrag(this, e);
-
-    private void Maximize_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-        var maximized = WindowState == WindowState.Maximized;
-        MaximizeIcon.IsVisible = !maximized;
-        RestoreIcon.IsVisible = maximized;
-        Avalonia.Controls.ToolTip.SetTip(MaximizeButton, maximized ? "还原" : "最大化");
     }
 
     private static string SelectedTag(Avalonia.Controls.ComboBox comboBox, string fallback)
