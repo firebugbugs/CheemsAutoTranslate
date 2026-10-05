@@ -176,7 +176,7 @@
           <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
             <StackPanel Spacing="3">
               <TextBlock Text="版本更新" FontSize="14" FontWeight="SemiBold" />
-              <TextBlock x:Name="CurrentVersionText" Text="当前版本 v0.0.2-beta3"
+              <TextBlock x:Name="CurrentVersionText" Text="当前版本 v0.0.3"
                          FontSize="12" Foreground="#756B63" />
               <TextBlock x:Name="UpdateStatusText" Text="正在检查 Gitee 发行版…"
                          FontSize="12" Foreground="#756B63" TextWrapping="Wrap" />
