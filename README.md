@@ -2,7 +2,7 @@
 
 # Cheems翻译
 
-[![下载最新版](https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-%E6%9C%80%E6%96%B0%E7%89%88-16856B)](https://gitee.com/unbengable/cheems-auto-translate/releases/download/v0.0.3/CheemsTranslator-v0.0.3-Setup.exe)
+[![下载最新版](https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-%E6%9C%80%E6%96%B0%E7%89%88-16856B)](https://gitee.com/unbengable/cheems-auto-translate/releases/download/v0.0.4/CheemsTranslator-v0.0.4-Setup.exe)
 [![QQ群](https://img.shields.io/badge/QQ%E7%BE%A4-1094431427-12B7F5)](https://qm.qq.com/q/gmOiP7PLnW)
 [![GitHub仓库](https://img.shields.io/badge/GitHub-%E4%BB%93%E5%BA%93-181717?logo=github)](https://github.com/firebugbugs/CheemsAutoTranslate)
 [![Gitee仓库](https://img.shields.io/badge/Gitee-%E4%BB%93%E5%BA%93-C71D23?logo=gitee)](https://gitee.com/unbengable/cheems-auto-translate)

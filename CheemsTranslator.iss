@@ -1,5 +1,5 @@
 #define MyAppName "Cheems翻译"
-#define MyAppVersion "0.0.3"
+#define MyAppVersion "0.0.4"
 #define MyAppPublisher "萤灬虫"
 #define MyAppExeName "CursorTranslator.exe"
 
@@ -18,9 +18,9 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupIconFile=CursorTranslator\Assets\translator_icon.ico
-OutputDir=release\v0.0.3
-OutputBaseFilename=CheemsTranslator-v0.0.3-Setup
-VersionInfoVersion=0.0.3.0
+OutputDir=release\v0.0.4
+OutputBaseFilename=CheemsTranslator-v0.0.4-Setup
+VersionInfoVersion=0.0.4.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=Cheems翻译 安装程序
 VersionInfoProductName={#MyAppName}
@@ -92,7 +92,7 @@ chsimp.UninstalledAll=已成功从计算机中删除 %1。
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "快捷方式："; Flags: unchecked
 
 [Files]
-Source: "release\v0.0.3\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pdb"
+Source: "release\v0.0.4\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pdb"
 
 [Icons]
 Name: "{autoprograms}\Cheems翻译"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--show-settings"; WorkingDir: "{app}"
