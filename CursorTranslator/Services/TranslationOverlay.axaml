@@ -57,6 +57,11 @@
   </Window.Styles>
   <Border x:Name="CardBorder" Background="#EF111827" CornerRadius="11" BorderBrush="#607AEE" BorderThickness="1" Padding="12,8"
           PointerPressed="Card_PointerPressed" PointerReleased="Card_PointerReleased" Cursor="SizeAll">
+    <Border.ContextMenu>
+      <ContextMenu>
+        <MenuItem Header="返回主页面" Click="ReturnToMainPage_Click" />
+      </ContextMenu>
+    </Border.ContextMenu>
     <StackPanel>
       <Grid ColumnDefinitions="*,Auto" MinHeight="38">
         <ScrollViewer x:Name="TranslationScrollViewer" Grid.Column="0" MinHeight="38" MaxHeight="420"
@@ -93,6 +98,8 @@
                 <MenuItem Header="复制" Click="CopyTranslation_Click" />
                 <MenuItem x:Name="SpeakTranslationMenuItem" Header="朗读"
                           IsVisible="False" Click="SpeakTranslationSelection_Click" />
+                <Separator />
+                <MenuItem Header="返回主页面" Click="ReturnToMainPage_Click" />
               </ContextMenu>
             </SelectableTextBlock.ContextMenu>
           </SelectableTextBlock>

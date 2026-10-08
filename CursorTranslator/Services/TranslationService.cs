@@ -13,6 +13,7 @@ public sealed class TranslationService
 {
     private const int MaximumChunkLength = 3_000;
     private const int SentenceBoundarySearchRadius = 10;
+    private const int DeepAnalysisOutputTokenLimit = 8_192;
     private static readonly HttpClient Client = new() { Timeout = Timeout.InfiniteTimeSpan };
     private readonly TranslationHttpProfileService _httpProfileService = new();
 
@@ -264,7 +265,7 @@ public sealed class TranslationService
             endpoint,
             systemPrompt,
             JsonSerializer.Serialize(new { source_text = sourceText, existing_translation = existingTranslation }),
-            (int)Math.Clamp((sourceText.Length + (existingTranslation?.Length ?? 0)) * 3L, 1_600L, 8_192L),
+            DeepAnalysisOutputTokenLimit,
             cancellationToken,
             aiProfile: profile,
             onDelta: onDelta,
@@ -303,7 +304,7 @@ public sealed class TranslationService
                 translation_context = translationContext,
                 source_text = sourceText
             }),
-            (int)Math.Clamp((selectedText.Length + translationContext.Length + sourceText.Length) * 2L, 1_200L, 8_192L),
+            DeepAnalysisOutputTokenLimit,
             cancellationToken,
             aiProfile: profile,
             onDelta: onDelta,

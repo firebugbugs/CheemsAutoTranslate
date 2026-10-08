@@ -101,6 +101,11 @@ public partial class MainWindow : Window
         _overlay.DeepAnalysisDismissed += OnDeepAnalysisDismissed;
         _overlay.SpeechRequested += OnSpeechRequested;
         _overlay.SpeechStopRequested += OnOverlaySpeechStopRequested;
+        _overlay.MainPageRequested += () =>
+        {
+            _overlay.HideOverlay();
+            ShowSettingsWindow();
+        };
         UpdateDeepAnalysisAvailability();
         UpdateSpeechAvailability();
         _monitor = new InputMonitor();

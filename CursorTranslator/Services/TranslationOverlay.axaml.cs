@@ -60,6 +60,7 @@ public partial class TranslationOverlay : Window
     public event Action? DeepAnalysisDismissed;
     public event Action<string>? SpeechRequested;
     public event Action? SpeechStopRequested;
+    public event Action? MainPageRequested;
 
     public void SetDeepAnalysisAvailability(bool sourceTranslationAvailable, bool selectedTermAvailable)
     {
@@ -601,6 +602,12 @@ public partial class TranslationOverlay : Window
             SaveLockedPosition();
     }
 
+    private void ReturnToMainPage_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        MainPageRequested?.Invoke();
+        e.Handled = true;
+    }
+
     private void PositionLockToggle_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_updatingAppearanceControls || !_appearanceControlsInitialized) return;
@@ -721,12 +728,17 @@ public partial class TranslationOverlay : Window
             var copyItem = new Avalonia.Controls.MenuItem { Header = "复制" };
             copyItem.Click += CopyDeepAnalysis_Click;
             menu.Items.Add(copyItem);
-            if (_speechAvailable)
+            var speakItem = new Avalonia.Controls.MenuItem
             {
-                var speakItem = new Avalonia.Controls.MenuItem { Header = "朗读" };
-                speakItem.Click += SpeakDeepAnalysis_Click;
-                menu.Items.Add(speakItem);
-            }
+                Header = "朗读",
+                IsEnabled = _speechAvailable
+            };
+            speakItem.Click += SpeakDeepAnalysis_Click;
+            menu.Items.Add(speakItem);
+            menu.Items.Add(new Avalonia.Controls.Separator());
+            var returnToMainPageItem = new Avalonia.Controls.MenuItem { Header = "返回主页面" };
+            returnToMainPageItem.Click += ReturnToMainPage_Click;
+            menu.Items.Add(returnToMainPageItem);
             textBlock.ContextMenu = menu;
         }
     }

@@ -115,6 +115,8 @@ public partial class SettingsWindow : Window
     private void RefreshTriggerControls()
     {
         var immediateMode = TranslateOnTextChangeCheckBox.IsChecked == true;
+        ConditionalTriggerStatusText.Text = immediateMode ? "实时模式下暂停" : "可组合";
+        ConditionalTriggersPanel.Opacity = immediateMode ? 0.68 : 1;
         TranslateOnSentenceEndCheckBox.IsEnabled = !immediateMode;
         TranslateAfterCopyCheckBox.IsEnabled = true;
         TranslateAfterInactivityCheckBox.IsEnabled = !immediateMode;

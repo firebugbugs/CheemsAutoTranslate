@@ -4,7 +4,7 @@
         x:Class="CursorTranslator.Services.SettingsWindow"
         Icon="/Assets/translator_icon.ico"
         Title="Cheems翻译 · 设置"
-        Width="660" Height="620" MinWidth="580" MinHeight="540"
+        Width="720" Height="700" MinWidth="620" MinHeight="600"
         WindowStartupLocation="CenterOwner" CanResize="True"
         SystemDecorations="None" Background="Transparent" TransparencyLevelHint="Transparent"
         Foreground="#302B27">
@@ -12,30 +12,79 @@
     <Style Selector="TextBox">
       <Setter Property="Background" Value="#FFFEFC" />
       <Setter Property="Foreground" Value="#302B27" />
-      <Setter Property="BorderBrush" Value="#E6DED5" />
+      <Setter Property="BorderBrush" Value="#E4DCD4" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="CornerRadius" Value="10" />
       <Setter Property="Padding" Value="10,7" />
-      <Setter Property="MinHeight" Value="38" />
+      <Setter Property="MinHeight" Value="40" />
       <Setter Property="FontSize" Value="14" />
     </Style>
     <Style Selector="TextBox:focus">
       <Setter Property="BorderBrush" Value="#B65D3B" />
     </Style>
     <Style Selector="TextBox:disabled">
-      <Setter Property="Opacity" Value="0.55" />
+      <Setter Property="Background" Value="#F3F0ED" />
+      <Setter Property="Opacity" Value="0.62" />
     </Style>
     <Style Selector="CheckBox">
-      <Setter Property="Foreground" Value="#493F38" />
+      <Setter Property="Foreground" Value="#37312D" />
       <Setter Property="FontSize" Value="14" />
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
-    <Style Selector="Border.option-card">
-      <Setter Property="Background" Value="#FBF8F5" />
-      <Setter Property="BorderBrush" Value="#EEE5DD" />
+    <Style Selector="CheckBox:disabled">
+      <Setter Property="Opacity" Value="0.55" />
+    </Style>
+    <Style Selector="Border.settings-panel">
+      <Setter Property="Background" Value="#FFFEFC" />
+      <Setter Property="BorderBrush" Value="#E9E1D9" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="11" />
-      <Setter Property="Padding" Value="12,10" />
+      <Setter Property="CornerRadius" Value="16" />
+      <Setter Property="Padding" Value="20,18" />
+    </Style>
+    <Style Selector="Border.option-card">
+      <Setter Property="Background" Value="#FAF7F4" />
+      <Setter Property="BorderBrush" Value="#ECE4DC" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="14,12" />
+    </Style>
+    <Style Selector="Border.option-card:pointerover">
+      <Setter Property="Background" Value="#F8F2ED" />
+      <Setter Property="BorderBrush" Value="#DCCABD" />
+    </Style>
+    <Style Selector="Border.primary-trigger">
+      <Setter Property="Background" Value="#FBF3EE" />
+      <Setter Property="BorderBrush" Value="#E8D5C8" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="13" />
+      <Setter Property="Padding" Value="16,13" />
+    </Style>
+    <Style Selector="Border.condition-trigger">
+      <Setter Property="Background" Value="#FAF8F5" />
+      <Setter Property="BorderBrush" Value="#EAE3DC" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="13" />
+      <Setter Property="Padding" Value="16,14" />
+    </Style>
+    <Style Selector="TextBlock.settings-section-title">
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="#302B27" />
+    </Style>
+    <Style Selector="TextBlock.settings-section-description">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="#81766D" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.settings-option-description">
+      <Setter Property="FontSize" Value="11.5" />
+      <Setter Property="Foreground" Value="#81766D" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.settings-unit">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="#746960" />
+      <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
   </Window.Styles>
 
@@ -43,69 +92,132 @@
     <Grid RowDefinitions="40,*">
       <services:ManagementWindowTitleBar Grid.Row="0" Title="Cheems翻译 · 设置" />
       <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Margin="24,18,24,24" Spacing="15">
-          <TextBlock Text="翻译设置" FontSize="23" FontWeight="Bold" Foreground="#302B27" />
+        <StackPanel Margin="28,20,28,24" Spacing="16">
+          <Grid ColumnDefinitions="4,*,Auto" ColumnSpacing="14" VerticalAlignment="Center">
+            <Border Grid.Column="0" Background="#B65D3B" CornerRadius="2" />
+            <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+              <TextBlock Text="翻译设置" FontSize="25" FontWeight="Bold" Foreground="#302B27" />
+              <TextBlock Text="调整自动翻译的触发方式与浮窗行为。" FontSize="13" Foreground="#81766D" />
+            </StackPanel>
+            <Border Grid.Column="2" Background="#F7EEE8" CornerRadius="10" Padding="11,7"
+                    VerticalAlignment="Center">
+              <TextBlock Text="偏好设置" FontSize="12" FontWeight="SemiBold" Foreground="#8D523B" />
+            </Border>
+          </Grid>
 
-          <Border Padding="18" CornerRadius="15" Background="#FFFEFC"
-                  BorderBrush="#EAE2D9" BorderThickness="1">
-            <StackPanel Spacing="14">
-              <TextBlock Text="翻译时机" FontSize="16" FontWeight="Bold" />
-              <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="10">
-                <Border Classes="option-card">
-                  <CheckBox x:Name="TranslateOnTextChangeCheckBox" Content="文字变化"
-                            Checked="TranslationTriggerOption_Changed" Unchecked="TranslationTriggerOption_Changed" />
-                </Border>
-                <Border Grid.Column="1" Classes="option-card">
-                  <CheckBox x:Name="TranslateOnSentenceEndCheckBox" Content="句末"
-                            Checked="TranslationTriggerOption_Changed" Unchecked="TranslationTriggerOption_Changed" />
-                </Border>
-                <Border Grid.Row="1" Classes="option-card">
-                  <StackPanel Spacing="8">
-                    <CheckBox x:Name="TranslateAfterInactivityCheckBox" Content="停顿后"
+          <Border Classes="settings-panel">
+            <StackPanel Spacing="16">
+              <StackPanel Spacing="4">
+                <TextBlock Classes="settings-section-title" Text="输入触发方式" />
+                <TextBlock Classes="settings-section-description"
+                           Text="选择实时翻译或按条件提交；复制触发可独立启用。" />
+              </StackPanel>
+              <Border Classes="primary-trigger">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="18" VerticalAlignment="Center">
+                  <StackPanel Spacing="5" VerticalAlignment="Center">
+                    <CheckBox x:Name="TranslateOnTextChangeCheckBox" Content="文字变化时立即翻译"
                               Checked="TranslationTriggerOption_Changed" Unchecked="TranslationTriggerOption_Changed" />
-                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="24,0,0,0">
-                      <TextBox x:Name="InactivityDelaySecondsBox" Width="74" Text="2" Watermark="2"
-                               TextAlignment="Center" ToolTip.Tip="停顿时长，0.5–60 秒。" />
-                      <TextBlock Text="秒" VerticalAlignment="Center" FontSize="13" Foreground="#655A52" />
-                    </StackPanel>
+                    <TextBlock Classes="settings-option-description" Margin="24,0,0,0"
+                               Text="输入内容一变化就提交。启用后，句末和停顿条件暂停使用。" />
                   </StackPanel>
-                </Border>
-                <Border Grid.Row="1" Grid.Column="1" Classes="option-card">
-                  <CheckBox x:Name="TranslateAfterCopyCheckBox" Content="复制后"
+                  <Border Grid.Column="1" Background="#F3E3D9" CornerRadius="9" Padding="10,6"
+                          VerticalAlignment="Center">
+                    <TextBlock Text="即时" FontSize="12" FontWeight="SemiBold" Foreground="#8D523B" />
+                  </Border>
+                </Grid>
+              </Border>
+
+              <Border x:Name="ConditionalTriggersPanel" Classes="condition-trigger">
+                <StackPanel Spacing="10">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                    <TextBlock Text="按条件提交" FontSize="14" FontWeight="SemiBold"
+                               Foreground="#37312D" VerticalAlignment="Center" />
+                    <TextBlock x:Name="ConditionalTriggerStatusText" Grid.Column="1" Text="句末与停顿可组合"
+                               FontSize="11" Foreground="#81766D" VerticalAlignment="Center" />
+                  </Grid>
+                  <Border Height="1" Background="#EAE3DC" />
+                  <Grid ColumnDefinitions="210,*,Auto" ColumnSpacing="12" VerticalAlignment="Center">
+                    <CheckBox x:Name="TranslateOnSentenceEndCheckBox" Content="常见标点后翻译"
+                              Checked="TranslationTriggerOption_Changed" Unchecked="TranslationTriggerOption_Changed" />
+                    <TextBlock Grid.Column="1" Classes="settings-option-description"
+                               Text="逗号、分号、冒号、句号、省略号等常见中英文标点均可触发。"
+                               VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Text="， , ； : …" FontSize="13" Foreground="#93877D"
+                               VerticalAlignment="Center" />
+                  </Grid>
+                  <Border Height="1" Background="#EAE3DC" />
+                  <Grid ColumnDefinitions="210,*,Auto" ColumnSpacing="12" VerticalAlignment="Center">
+                    <CheckBox x:Name="TranslateAfterInactivityCheckBox" Content="输入停顿后翻译"
+                              Checked="TranslationTriggerOption_Changed" Unchecked="TranslationTriggerOption_Changed" />
+                    <TextBlock Grid.Column="1" Classes="settings-option-description"
+                               Text="没有触发标点时，停顿达到设定时长后提交。" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                      <TextBox x:Name="InactivityDelaySecondsBox" Width="76" Text="2" Watermark="2"
+                               TextAlignment="Center" ToolTip.Tip="停顿时长，0.5–60 秒。" />
+                      <TextBlock Classes="settings-unit" Text="秒" />
+                    </StackPanel>
+                  </Grid>
+                </StackPanel>
+              </Border>
+
+              <Border Height="1" Background="#E9E1D9" />
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16" VerticalAlignment="Center">
+                <StackPanel Spacing="4">
+                  <CheckBox x:Name="TranslateAfterCopyCheckBox" Content="复制后自动翻译"
                             Checked="TranslationTriggerOption_Changed" Unchecked="TranslationTriggerOption_Changed"
                             ToolTip.Tip="复制纯文本后触发翻译。" />
+                  <TextBlock Classes="settings-option-description" Margin="24,0,0,0"
+                             Text="这是独立触发方式，可与上方任一输入方式同时使用。" />
+                </StackPanel>
+                <Border Grid.Column="1" Background="#F2F0ED" CornerRadius="9" Padding="10,6"
+                        VerticalAlignment="Center">
+                  <TextBlock Text="剪贴板" FontSize="11" Foreground="#746960" />
                 </Border>
               </Grid>
             </StackPanel>
           </Border>
 
-          <Border Padding="18" CornerRadius="15" Background="#FFFEFC"
-                  BorderBrush="#EAE2D9" BorderThickness="1">
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16" VerticalAlignment="Center">
-              <TextBlock Text="最多翻译" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" />
+          <Border Classes="settings-panel">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="20" VerticalAlignment="Center">
+              <StackPanel Spacing="4" VerticalAlignment="Center">
+                <TextBlock Classes="settings-section-title" Text="单次翻译上限" />
+                <TextBlock Classes="settings-section-description"
+                           Text="中文按字、英文按词计数；标点和空白不计。" />
+              </StackPanel>
               <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
-                <TextBox x:Name="MaximumTranslationCharactersBox" Width="92" Text="10" Watermark="10"
+                <TextBox x:Name="MaximumTranslationCharactersBox" Width="96" Text="10" Watermark="10"
                          MaxLength="4" TextAlignment="Center"
                          ToolTip.Tip="范围 5–1000；中文按字、英文按词计数。" />
-                <TextBlock Text="字/词" VerticalAlignment="Center" FontSize="13" Foreground="#655A52" />
+                <TextBlock Classes="settings-unit" Text="字 / 词" />
               </StackPanel>
             </Grid>
           </Border>
 
-          <Border Padding="18" CornerRadius="15" Background="#FFFEFC"
-                  BorderBrush="#EAE2D9" BorderThickness="1">
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16" VerticalAlignment="Center">
-              <CheckBox x:Name="OverlayFocusLossCloseDelayCheckBox" Content="浮窗延迟关闭"
-                        Checked="OverlayFocusLossCloseDelay_Changed" Unchecked="OverlayFocusLossCloseDelay_Changed"
-                        ToolTip.Tip="失去输入焦点后，等待设定时长再关闭浮窗。" />
-              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
-                <TextBox x:Name="OverlayFocusLossCloseDelaySecondsBox" Width="78" Text="5" Watermark="5"
-                         MaxLength="2" TextAlignment="Center"
-                         ToolTip.Tip="延迟关闭时长，1–60 秒。" />
-                <TextBlock Text="秒" VerticalAlignment="Center" FontSize="13" Foreground="#655A52" />
+          <Border Classes="settings-panel">
+            <StackPanel Spacing="14">
+              <StackPanel Spacing="4">
+                <TextBlock Classes="settings-section-title" Text="浮窗行为" />
+                <TextBlock Classes="settings-section-description"
+                           Text="切换到其他窗口后，可保留浮窗片刻以便选词、复制或朗读。" />
               </StackPanel>
-            </Grid>
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="20" VerticalAlignment="Center">
+                <CheckBox x:Name="OverlayFocusLossCloseDelayCheckBox" Content="浮窗延迟关闭"
+                          Checked="OverlayFocusLossCloseDelay_Changed" Unchecked="OverlayFocusLossCloseDelay_Changed"
+                          ToolTip.Tip="失去输入焦点后，等待设定时长再关闭浮窗。" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                  <TextBox x:Name="OverlayFocusLossCloseDelaySecondsBox" Width="84" Text="2" Watermark="2"
+                           MaxLength="2" TextAlignment="Center"
+                           ToolTip.Tip="延迟关闭时长，1–60 秒。" />
+                  <TextBlock Classes="settings-unit" Text="秒" />
+                </StackPanel>
+              </Grid>
+            </StackPanel>
           </Border>
+
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="2,0,0,0" VerticalAlignment="Center">
+            <Ellipse Width="7" Height="7" Fill="#5B8A67" VerticalAlignment="Center" />
+            <TextBlock Text="更改会自动保存" FontSize="12" Foreground="#81766D" VerticalAlignment="Center" />
+          </StackPanel>
         </StackPanel>
       </ScrollViewer>
     </Grid>

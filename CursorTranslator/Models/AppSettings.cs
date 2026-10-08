@@ -14,7 +14,7 @@ public sealed class AppSettings
     public const decimal DefaultInactivityDelaySeconds = 2m;
     public const decimal MinimumInactivityDelaySeconds = 0.5m;
     public const decimal MaximumInactivityDelaySeconds = 60m;
-    public const int DefaultOverlayFocusLossDelaySeconds = 5;
+    public const int DefaultOverlayFocusLossDelaySeconds = 2;
     public const int MinimumOverlayFocusLossDelaySeconds = 1;
     public const int MaximumOverlayFocusLossDelaySeconds = 60;
     public const int DefaultMaximumTranslationCharacters = 10;
