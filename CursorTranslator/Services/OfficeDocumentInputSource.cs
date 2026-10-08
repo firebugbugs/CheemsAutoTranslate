@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.CSharp.RuntimeBinder;
 using Avalonia;
 using System.Windows.Automation;
 using CursorTranslator.Models;
@@ -112,6 +113,7 @@ internal static class OfficeDocumentInputSource
             object? activeWindowObject = null;
             object? documentObject = null;
             object? selectionObject = null;
+            object? selectionRangeObject = null;
             object? paragraphsObject = null;
             object? paragraphObject = null;
             object? rangeObject = null;
@@ -161,10 +163,15 @@ internal static class OfficeDocumentInputSource
                 dynamic selection = selectionObject;
                 // Prefer an explicit selection. When the caret is collapsed, use the
                 // containing paragraph as the useful translation context.
+                stage = "判断当前是否有选区";
+                object? selectionStartValue = selection.Start;
+                object? selectionEndValue = selection.End;
+                var hasExplicitSelection = Convert.ToInt32(selectionStartValue)
+                    != Convert.ToInt32(selectionEndValue);
                 stage = "读取当前选区";
                 object? selectedTextValue = selection.Text;
                 var selectedText = Convert.ToString(selectedTextValue) ?? "";
-                if (selectedText.Length > 0)
+                if (hasExplicitSelection && selectedText.Length > 0)
                 {
                     value = selectedText;
                     stage = "读取段落集合";
@@ -192,42 +199,84 @@ internal static class OfficeDocumentInputSource
                     return true;
                 }
 
-                stage = "读取段落集合";
-                paragraphsObject = selection.Paragraphs;
-                if (paragraphsObject is null)
+                // A collapsed WPS selection may expose no usable Selection.Paragraphs
+                // item. Expanding a duplicate of Selection.Range locates the paragraph
+                // directly from the insertion point without changing the user's caret.
+                var paragraphStart = 0;
+                var paragraphRead = false;
+                try
                 {
-                    description = "文档接口未命中：当前段落不可用";
-                    return false;
+                    stage = "读取光标范围";
+                    selectionRangeObject = selection.Range;
+                    dynamic selectionRange = selectionRangeObject;
+                    rangeObject = selectionRange.Duplicate;
+                    dynamic paragraphRange = rangeObject;
+                    stage = "扩展到光标所在段落";
+                    paragraphRange.Expand(4); // Word's wdParagraph unit.
+                    stage = "读取段落文本";
+                    object? expandedText = paragraphRange.Text;
+                    var expandedValue = Convert.ToString(expandedText) ?? "";
+                    if (expandedValue.Length > 0)
+                    {
+                        value = expandedValue;
+                        stage = "读取段落起始位置";
+                        object? expandedStart = paragraphRange.Start;
+                        paragraphStart = Convert.ToInt32(expandedStart);
+                        paragraphRead = true;
+                    }
+                }
+                catch (Exception ex) when (ex is COMException
+                    or InvalidCastException
+                    or InvalidOperationException
+                    or RuntimeBinderException)
+                {
+                    // Fall back to the Paragraphs collection for Word versions and
+                    // compatible editors that do not implement Range.Expand.
+                    paragraphRead = false;
                 }
 
-                dynamic paragraphs = paragraphsObject;
-                // Avoid C#'s dynamic indexer binding here. WPS exposes the
-                // Word-compatible Paragraphs collection through IDispatch, and
-                // its default member can be mis-bound as string.this[int].
-                stage = "获取段落集合第 1 项";
-                paragraphObject = paragraphs.Item(1);
-                if (paragraphObject is null)
+                if (!paragraphRead)
                 {
-                    description = "文档接口未命中：无法定位光标所在段落";
-                    return false;
+                    ReleaseComObject(rangeObject);
+                    rangeObject = null;
+                    stage = "读取段落集合";
+                    paragraphsObject = selection.Paragraphs;
+                    if (paragraphsObject is null)
+                    {
+                        description = "文档接口未命中：当前段落不可用";
+                        return false;
+                    }
+
+                    dynamic paragraphs = paragraphsObject;
+                    // Avoid C#'s dynamic indexer binding here. WPS exposes the
+                    // Word-compatible Paragraphs collection through IDispatch, and
+                    // its default member can be mis-bound as string.this[int].
+                    stage = "获取段落集合第 1 项";
+                    paragraphObject = paragraphs.Item(1);
+                    if (paragraphObject is null)
+                    {
+                        description = "文档接口未命中：无法定位光标所在段落";
+                        return false;
+                    }
+
+                    dynamic paragraph = paragraphObject;
+                    stage = "获取段落范围";
+                    rangeObject = paragraph.Range;
+                    if (rangeObject is null)
+                    {
+                        description = "文档接口未命中：当前段落范围不可用";
+                        return false;
+                    }
+
+                    dynamic range = rangeObject;
+                    stage = "读取段落文本";
+                    object? rangeText = range.Text;
+                    value = Convert.ToString(rangeText) ?? "";
+                    stage = "读取段落起始位置";
+                    object? rangeStart = range.Start;
+                    paragraphStart = Convert.ToInt32(rangeStart);
                 }
 
-                dynamic paragraph = paragraphObject;
-                stage = "获取段落范围";
-                rangeObject = paragraph.Range;
-                if (rangeObject is null)
-                {
-                    description = "文档接口未命中：当前段落范围不可用";
-                    return false;
-                }
-
-                dynamic range = rangeObject;
-                stage = "读取段落文本";
-                object? rangeText = range.Text;
-                value = Convert.ToString(rangeText) ?? "";
-                stage = "读取段落起始位置";
-                object? rangeStart = range.Start;
-                var paragraphStart = Convert.ToInt32(rangeStart);
                 stage = "读取文档名称";
                 object? documentNameValue = document.Name;
                 string documentName = Convert.ToString(documentNameValue) ?? "";
@@ -255,6 +304,7 @@ internal static class OfficeDocumentInputSource
                 ReleaseComObject(rangeObject);
                 ReleaseComObject(paragraphObject);
                 ReleaseComObject(paragraphsObject);
+                ReleaseComObject(selectionRangeObject);
                 ReleaseComObject(selectionObject);
                 ReleaseComObject(documentObject);
                 ReleaseComObject(activeWindowObject);
