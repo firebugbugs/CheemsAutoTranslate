@@ -21,6 +21,7 @@ public partial class DailyStatisticsWindow : Window
     public DailyStatisticsWindow(UsageStatisticsStore statisticsStore)
     {
         InitializeComponent();
+        WindowFrameHelper.Track(this, WindowSurface);
         _statisticsStore = statisticsStore;
 
         var today = DateOnly.FromDateTime(DateTime.Today);

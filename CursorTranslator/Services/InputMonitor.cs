@@ -17,6 +17,7 @@ namespace CursorTranslator.Services;
 public sealed class InputMonitor : IDisposable
 {
     private const uint GcsCompStr = 0x0008;
+    private const uint CfUnicodeText = 13;
     private const uint ObjIdClient = 0xFFFFFFFC;
     private const uint GaRoot = 2;
     private const uint GwOwner = 4;
@@ -26,6 +27,7 @@ public sealed class InputMonitor : IDisposable
     private const int StateSystemReadOnly = 0x00000040;
     private const int StateSystemProtected = 0x20000000;
     private const string PasswordControlDiagnostic = "检测到受保护的密码输入框，已跳过";
+    private const int MaximumClipboardTextCharacters = 100_000;
     private Thread? _thread;
     private readonly AutoResetEvent _pollWake = new(false);
     private readonly WinEventNotifier _winEventNotifier;
@@ -33,6 +35,7 @@ public sealed class InputMonitor : IDisposable
     private int _disposed;
     private string? _elementId;
     private IntPtr _targetRootWindow;
+    private IntPtr _overlaySourceRootWindow;
     private IntPtr _overlayWindowHandle;
     private int _overlayInteractionActive;
     private string _baseline = "";
@@ -41,10 +44,12 @@ public sealed class InputMonitor : IDisposable
     private DateTime? _unreadableSinceUtc;
     private string? _lastDiagnostic;
     private string? _lastLoopError;
+    private uint _lastClipboardSequenceNumber;
     private static readonly TimeSpan UnreadableTargetGrace = TimeSpan.FromMilliseconds(600);
     private TriggerConfiguration _triggerConfiguration = new(
         false,
         true,
+        false,
         false,
         (int)(AppSettings.DefaultInactivityDelaySeconds * 1000));
 
@@ -56,6 +61,7 @@ public sealed class InputMonitor : IDisposable
     public void ConfigureTranslationTriggers(
         bool onTextChange,
         bool onSentenceEnd,
+        bool afterCopy,
         bool afterInactivity,
         int inactivityDelayMilliseconds)
     {
@@ -68,17 +74,23 @@ public sealed class InputMonitor : IDisposable
         Volatile.Write(ref _triggerConfiguration, new TriggerConfiguration(
             onTextChange,
             onSentenceEnd,
+            afterCopy,
             afterInactivity,
             Math.Max(1, inactivityDelayMilliseconds)));
     }
 
     public event Action<MonitoredText>? TextCommitted;
     public event Action? InputCleared;
+    public event Action? FocusLost;
+    public event Action? TargetFound;
     public event Action<string>? Error;
     public event Action<string>? Diagnostic;
 
     public void SetOverlayWindowHandle(IntPtr handle)
         => Interlocked.Exchange(ref _overlayWindowHandle, handle);
+
+    public void SetOverlaySourceRootWindowHandle(IntPtr handle)
+        => Interlocked.Exchange(ref _overlaySourceRootWindow, handle);
 
     public void PreserveTargetForOverlayInteraction()
         => Interlocked.Exchange(ref _overlayInteractionActive, 1);
@@ -87,6 +99,7 @@ public sealed class InputMonitor : IDisposable
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         if (_running) return;
+        _lastClipboardSequenceNumber = GetClipboardSequenceNumber();
         _running = true;
         _winEventNotifier.Start();
         _thread = new Thread(Run) { IsBackground = true, Name = "CursorTranslator UIA watcher" };
@@ -97,6 +110,7 @@ public sealed class InputMonitor : IDisposable
     public void Stop()
     {
         _running = false;
+        Interlocked.Exchange(ref _overlaySourceRootWindow, IntPtr.Zero);
         _pollWake.Set();
         _winEventNotifier.Stop();
         if (_thread is { IsAlive: true } thread && thread != Thread.CurrentThread)
@@ -131,8 +145,101 @@ public sealed class InputMonitor : IDisposable
                 }
             }
 
+            try
+            {
+                PollClipboard();
+            }
+            catch (Exception)
+            {
+                // Clipboard providers can temporarily fail while another process
+                // owns or renders the clipboard. Retry on the next polling pass.
+                ReportDiagnostic("剪贴板暂时不可读取，稍后重试。");
+            }
+
             _pollWake.WaitOne(180);
         }
+    }
+
+    private void PollClipboard()
+    {
+        var sequenceNumber = GetClipboardSequenceNumber();
+        if (sequenceNumber == _lastClipboardSequenceNumber) return;
+
+        var triggers = Volatile.Read(ref _triggerConfiguration);
+        if (!triggers.AfterCopy || IsClipboardOwnedByThisProcess())
+        {
+            _lastClipboardSequenceNumber = sequenceNumber;
+            return;
+        }
+
+        if (!TryReadClipboardText(out var text))
+            return; // Clipboard is busy; keep the old sequence so this change is retried.
+
+        _lastClipboardSequenceNumber = GetClipboardSequenceNumber();
+        if (string.IsNullOrWhiteSpace(text) || TranslationService.IsUrl(text))
+            return;
+
+        Emit(text, GetCursorBounds(), GetForegroundRootWindow(), isCopyTriggered: true);
+    }
+
+    private static bool IsClipboardOwnedByThisProcess()
+    {
+        var owner = GetClipboardOwner();
+        if (owner != IntPtr.Zero)
+        {
+            GetWindowThreadProcessId(owner, out var ownerProcessId);
+            if (ownerProcessId == Environment.ProcessId) return true;
+        }
+
+        var foregroundWindow = GetForegroundWindow();
+        if (foregroundWindow == IntPtr.Zero) return false;
+        GetWindowThreadProcessId(foregroundWindow, out var foregroundProcessId);
+        return foregroundProcessId == Environment.ProcessId;
+    }
+
+    private static bool TryReadClipboardText(out string text)
+    {
+        text = "";
+        if (!OpenClipboard(IntPtr.Zero)) return false;
+
+        try
+        {
+            if (!IsClipboardFormatAvailable(CfUnicodeText))
+                return true;
+
+            var data = GetClipboardData(CfUnicodeText);
+            if (data == IntPtr.Zero) return true;
+
+            var lockedData = GlobalLock(data);
+            if (lockedData == IntPtr.Zero) return true;
+            try
+            {
+                var byteLength = GlobalSize(data).ToUInt64();
+                if (byteLength < 2) return true;
+                var characterCount = (int)Math.Clamp(
+                    byteLength / 2,
+                    1UL,
+                    (ulong)MaximumClipboardTextCharacters);
+                var value = Marshal.PtrToStringUni(lockedData, characterCount) ?? "";
+                var terminator = value.IndexOf('\0');
+                text = (terminator >= 0 ? value[..terminator] : value).Trim();
+                return true;
+            }
+            finally
+            {
+                GlobalUnlock(data);
+            }
+        }
+        finally
+        {
+            CloseClipboard();
+        }
+    }
+
+    private static PixelRect GetCursorBounds()
+    {
+        if (!GetCursorPos(out var point)) return default;
+        return new PixelRect(point.X, point.Y, 1, 1);
     }
 
     private void PollFocusedElement()
@@ -148,6 +255,17 @@ public sealed class InputMonitor : IDisposable
         // interacting with that card; switching to any other app still clears it.
         if (IsOverlayWindowOrOwnedPopup(foregroundWindow, foregroundRoot))
             return;
+
+        // Clipboard-triggered translations may come from windows that expose no
+        // readable focused control. Track their foreground root separately so the
+        // overlay still closes as soon as the user switches to another window.
+        var overlaySourceRoot = Interlocked.CompareExchange(
+            ref _overlaySourceRootWindow, IntPtr.Zero, IntPtr.Zero);
+        if (overlaySourceRoot != IntPtr.Zero && foregroundRoot != overlaySourceRoot)
+        {
+            Interlocked.Exchange(ref _overlaySourceRootWindow, IntPtr.Zero);
+            LostTarget(forceNotify: true);
+        }
 
         // The overlay belongs to the input window that produced it. Clear it as
         // soon as the user switches to another top-level window, even if that
@@ -259,6 +377,7 @@ public sealed class InputMonitor : IDisposable
         {
             _elementId = id;
             _targetRootWindow = foregroundRoot;
+            TargetFound?.Invoke();
             _baseline = value;
             _lastChangeUtc = DateTime.UtcNow;
             _hasPendingText = !string.IsNullOrWhiteSpace(value);
@@ -269,11 +388,11 @@ public sealed class InputMonitor : IDisposable
             }
             else if (triggers.OnTextChange)
             {
-                Commit(value, bounds);
+                Commit(value, bounds, foregroundRoot);
             }
             else if (triggers.OnSentenceEnd && EndsWithSentenceTerminator(value))
             {
-                Commit(value, bounds);
+                Commit(value, bounds, foregroundRoot);
             }
             return;
         }
@@ -297,7 +416,7 @@ public sealed class InputMonitor : IDisposable
 
         if (changed && triggers.OnTextChange)
         {
-            Commit(value, bounds);
+            Commit(value, bounds, foregroundRoot);
             return;
         }
 
@@ -307,7 +426,7 @@ public sealed class InputMonitor : IDisposable
             && (ContainsSentenceTerminator(GetChangedSegment(previousValue, value))
                 || EndsWithSentenceTerminator(value)))
         {
-            Commit(value, bounds);
+            Commit(value, bounds, foregroundRoot);
             return;
         }
 
@@ -315,7 +434,7 @@ public sealed class InputMonitor : IDisposable
             && (!triggers.OnSentenceEnd || !EndsWithSentenceTerminator(value))
             && DateTime.UtcNow - _lastChangeUtc >= TimeSpan.FromMilliseconds(triggers.InactivityDelayMilliseconds))
         {
-            Commit(value, bounds);
+            Commit(value, bounds, foregroundRoot);
         }
     }
 
@@ -412,9 +531,9 @@ public sealed class InputMonitor : IDisposable
         return false;
     }
 
-    private void Commit(string text, PixelRect bounds)
+    private void Commit(string text, PixelRect bounds, IntPtr foregroundRoot)
     {
-        Emit(text, bounds);
+        Emit(text, bounds, foregroundRoot);
         _hasPendingText = false;
         ReportDiagnostic("已提交");
     }
@@ -463,11 +582,23 @@ public sealed class InputMonitor : IDisposable
         return false;
     }
 
-    private void Emit(string text, PixelRect bounds)
+    private void Emit(
+        string text,
+        PixelRect bounds,
+        IntPtr sourceRootWindow = default,
+        bool isCopyTriggered = false)
     {
         text = text.Trim();
-        if (text.Length == 0) return;
-        TextCommitted?.Invoke(new MonitoredText(text, bounds));
+        if (text.Length == 0 || TranslationService.IsUrl(text)) return;
+        TextCommitted?.Invoke(new MonitoredText(text, bounds, sourceRootWindow, isCopyTriggered));
+    }
+
+    private static IntPtr GetForegroundRootWindow()
+    {
+        var foregroundWindow = GetForegroundWindow();
+        if (foregroundWindow == IntPtr.Zero) return IntPtr.Zero;
+        var foregroundRoot = GetAncestor(foregroundWindow, GaRoot);
+        return foregroundRoot == IntPtr.Zero ? foregroundWindow : foregroundRoot;
     }
 
     private static bool TryReadEditable(
@@ -1017,12 +1148,12 @@ public sealed class InputMonitor : IDisposable
         Diagnostic?.Invoke(message);
     }
 
-    private void LostTarget()
+    private void LostTarget(bool forceNotify = false)
     {
         var hadTarget = _elementId is not null;
         ResetTarget();
-        if (hadTarget)
-            InputCleared?.Invoke();
+        if (hadTarget || forceNotify)
+            FocusLost?.Invoke();
     }
 
     private void HandleUnreadableTarget(string message)
@@ -1071,8 +1202,16 @@ public sealed class InputMonitor : IDisposable
     private sealed record TriggerConfiguration(
         bool OnTextChange,
         bool OnSentenceEnd,
+        bool AfterCopy,
         bool AfterInactivity,
         int InactivityDelayMilliseconds);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
 
     public void Dispose()
     {
@@ -1083,6 +1222,13 @@ public sealed class InputMonitor : IDisposable
     }
 
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll", SetLastError = true)] private static extern uint GetClipboardSequenceNumber();
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool OpenClipboard(IntPtr newOwner);
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool CloseClipboard();
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool IsClipboardFormatAvailable(uint format);
+    [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr GetClipboardData(uint format);
+    [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr GetClipboardOwner();
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool GetCursorPos(out NativePoint point);
     [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr GetAncestor(IntPtr hWnd, uint flags);
     [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr GetWindow(IntPtr hWnd, uint command);
     [DllImport("user32.dll", SetLastError = true)] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
@@ -1091,6 +1237,9 @@ public sealed class InputMonitor : IDisposable
     [DllImport("oleacc.dll", PreserveSig = true)] private static extern int AccessibleObjectFromWindow(IntPtr hwnd, uint objectId, ref Guid interfaceId, [MarshalAs(UnmanagedType.Interface)] out Accessibility.IAccessible accessibleObject);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)] private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int index);
     [DllImport("user32.dll", SetLastError = true)] private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect rect);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr GlobalLock(IntPtr memory);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern UIntPtr GlobalSize(IntPtr memory);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GlobalUnlock(IntPtr memory);
     [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint message, IntPtr wParam, StringBuilder lParam, uint flags, uint timeout, out IntPtr result);
     [DllImport("imm32.dll", SetLastError = true)] private static extern IntPtr ImmGetContext(IntPtr hWnd);

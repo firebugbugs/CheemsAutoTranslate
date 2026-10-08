@@ -57,15 +57,21 @@ public sealed class SettingsStore
                     ? systemPrompt.GetString() ?? AppSettings.DefaultSystemPrompt
                     : AppSettings.DefaultSystemPrompt,
                 DeepAnalysisPrompt = ReadDeepAnalysisPrompt(root),
+                SelectedTranslationTermPrompt = ReadString(root, "selectedTranslationTermPrompt")
+                    ?? AppSettings.DefaultSelectedTranslationTermPrompt,
                 TranslationPromptProfiles = ReadPromptProfiles(root, "translationPromptProfiles"),
                 ActiveTranslationPromptProfileId = ReadString(root, "activeTranslationPromptProfileId") ?? "",
                 AnalysisPromptProfiles = ReadPromptProfiles(root, "analysisPromptProfiles"),
                 ActiveAnalysisPromptProfileId = ReadString(root, "activeAnalysisPromptProfileId") ?? "",
+                SelectedTranslationTermPromptProfiles = ReadPromptProfiles(root, "selectedTranslationTermPromptProfiles"),
+                ActiveSelectedTranslationTermPromptProfileId = ReadString(root, "activeSelectedTranslationTermPromptProfileId") ?? "",
                 TranslateOnTextChange = root.TryGetProperty("translateOnTextChange", out var translateOnTextChange)
                     ? translateOnTextChange.GetBoolean()
                     : true,
                 TranslateOnSentenceEnd = root.TryGetProperty("translateOnSentenceEnd", out var translateOnSentenceEnd)
                     && translateOnSentenceEnd.GetBoolean(),
+                TranslateAfterCopy = root.TryGetProperty("translateAfterCopy", out var translateAfterCopy)
+                    && translateAfterCopy.GetBoolean(),
                 TranslateAfterInactivity = root.TryGetProperty("translateAfterInactivity", out var translateAfterInactivity)
                     && translateAfterInactivity.GetBoolean(),
                 InactivityDelaySeconds = root.TryGetProperty("inactivityDelaySeconds", out var inactivityDelaySeconds)
@@ -73,9 +79,15 @@ public sealed class SettingsStore
                     : AppSettings.DefaultInactivityDelaySeconds,
                 MaximumTranslationCharacters = root.TryGetProperty("maximumTranslationCharacters", out var maximumTranslationCharacters)
                     ? Math.Clamp(maximumTranslationCharacters.GetInt32(), AppSettings.MinimumMaximumTranslationCharacters, AppSettings.MaximumMaximumTranslationCharacters)
-                    : AppSettings.DefaultMaximumTranslationCharacters
+                    : AppSettings.DefaultMaximumTranslationCharacters,
+                OverlayFocusLossCloseDelayEnabled = root.TryGetProperty("overlayFocusLossCloseDelayEnabled", out var overlayFocusLossCloseDelayEnabled)
+                    && overlayFocusLossCloseDelayEnabled.GetBoolean(),
+                OverlayFocusLossCloseDelaySeconds = root.TryGetProperty("overlayFocusLossCloseDelaySeconds", out var overlayFocusLossCloseDelaySeconds)
+                    ? Math.Clamp(overlayFocusLossCloseDelaySeconds.GetInt32(), AppSettings.MinimumOverlayFocusLossDelaySeconds, AppSettings.MaximumOverlayFocusLossDelaySeconds)
+                    : AppSettings.DefaultOverlayFocusLossDelaySeconds
             };
-            if (!settings.TranslateOnTextChange && !settings.TranslateOnSentenceEnd && !settings.TranslateAfterInactivity)
+            if (!settings.TranslateOnTextChange && !settings.TranslateOnSentenceEnd
+                && !settings.TranslateAfterCopy && !settings.TranslateAfterInactivity)
                 settings.TranslateOnTextChange = true;
             if (root.TryGetProperty("protectedKey", out var protectedKey))
             {
@@ -218,12 +230,25 @@ public sealed class SettingsStore
                     Prompt = settings.DeepAnalysisPrompt
                 });
             }
+            if (settings.SelectedTranslationTermPromptProfiles.Count == 0)
+            {
+                settings.SelectedTranslationTermPromptProfiles.Add(new PromptProfile
+                {
+                    Name = "默认选词提示词",
+                    Prompt = settings.SelectedTranslationTermPrompt
+                });
+            }
             if (!settings.TranslationPromptProfiles.Any(profile => profile.Id == settings.ActiveTranslationPromptProfileId))
                 settings.ActiveTranslationPromptProfileId = settings.TranslationPromptProfiles[0].Id;
             if (!settings.AnalysisPromptProfiles.Any(profile => profile.Id == settings.ActiveAnalysisPromptProfileId))
                 settings.ActiveAnalysisPromptProfileId = settings.AnalysisPromptProfiles[0].Id;
+            if (!settings.SelectedTranslationTermPromptProfiles.Any(profile =>
+                    profile.Id == settings.ActiveSelectedTranslationTermPromptProfileId))
+                settings.ActiveSelectedTranslationTermPromptProfileId = settings.SelectedTranslationTermPromptProfiles[0].Id;
             settings.SystemPrompt = settings.ActiveTranslationPromptProfile?.Prompt ?? AppSettings.DefaultSystemPrompt;
             settings.DeepAnalysisPrompt = settings.ActiveAnalysisPromptProfile?.Prompt ?? AppSettings.DefaultDeepAnalysisPrompt;
+            settings.SelectedTranslationTermPrompt = settings.ActiveSelectedTranslationTermPromptProfile?.Prompt
+                ?? AppSettings.DefaultSelectedTranslationTermPrompt;
 
             if (!settings.TranslationHttpProfiles.Any(profile => profile.Id == settings.ActiveTranslationHttpProfileId))
                 settings.ActiveTranslationHttpProfileId = settings.TranslationHttpProfiles[0].Id;
@@ -316,11 +341,17 @@ public sealed class SettingsStore
             ["activeTranslationPromptProfileId"] = settings.ActiveTranslationPromptProfileId,
             ["analysisPromptProfiles"] = settings.AnalysisPromptProfiles,
             ["activeAnalysisPromptProfileId"] = settings.ActiveAnalysisPromptProfileId,
+            ["selectedTranslationTermPrompt"] = settings.SelectedTranslationTermPrompt,
+            ["selectedTranslationTermPromptProfiles"] = settings.SelectedTranslationTermPromptProfiles,
+            ["activeSelectedTranslationTermPromptProfileId"] = settings.ActiveSelectedTranslationTermPromptProfileId,
             ["translateOnTextChange"] = settings.TranslateOnTextChange,
             ["translateOnSentenceEnd"] = settings.TranslateOnSentenceEnd,
+            ["translateAfterCopy"] = settings.TranslateAfterCopy,
             ["translateAfterInactivity"] = settings.TranslateAfterInactivity,
             ["inactivityDelaySeconds"] = settings.InactivityDelaySeconds,
-            ["maximumTranslationCharacters"] = settings.MaximumTranslationCharacters
+            ["maximumTranslationCharacters"] = settings.MaximumTranslationCharacters,
+            ["overlayFocusLossCloseDelayEnabled"] = settings.OverlayFocusLossCloseDelayEnabled,
+            ["overlayFocusLossCloseDelaySeconds"] = settings.OverlayFocusLossCloseDelaySeconds
         };
         if (!string.IsNullOrWhiteSpace(settings.ApiKey))
         {
@@ -449,6 +480,9 @@ public sealed class SettingsStore
             || string.Equals(prompt, PreviousDefaultDeepAnalysisPrompt, StringComparison.Ordinal)
             || string.Equals(prompt, PreviousSelectedTextAnalysisPrompt, StringComparison.Ordinal);
 
+    private static bool ReferencesRemovedSelectionInput(string prompt)
+        => prompt.Contains("selected_text", StringComparison.OrdinalIgnoreCase);
+
     private static string? ReadString(JsonElement root, string name)
     {
         var value = ReadElement(root, name);
@@ -535,7 +569,10 @@ public sealed class SettingsStore
             if (string.IsNullOrWhiteSpace(profile.Id)) profile.Id = Guid.NewGuid().ToString("N");
             profile.Name ??= "提示词";
             profile.Prompt ??= "";
-            if (propertyName == "analysisPromptProfiles" && IsPreviousDefaultDeepAnalysisPrompt(profile.Prompt))
+            if (propertyName == "analysisPromptProfiles"
+                && (IsPreviousDefaultDeepAnalysisPrompt(profile.Prompt)
+                    || (string.Equals(profile.Name, "默认解析提示词", StringComparison.Ordinal)
+                        && ReferencesRemovedSelectionInput(profile.Prompt))))
                 profile.Prompt = AppSettings.DefaultDeepAnalysisPrompt;
         }
         return result;

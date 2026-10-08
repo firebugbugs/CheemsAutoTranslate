@@ -47,7 +47,7 @@
     </Style>
   </Window.Styles>
 
-  <Border Margin="8" CornerRadius="14" Background="#FAF8F5"
+  <Border x:Name="WindowSurface" Margin="8" CornerRadius="14" Background="#FAF8F5"
           BorderBrush="#DCD2C8" BorderThickness="1" ClipToBounds="True"
           PointerPressed="WindowSurface_PointerPressed">
     <Grid RowDefinitions="40,*">

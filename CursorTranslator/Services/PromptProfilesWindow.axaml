@@ -16,7 +16,7 @@
       <Grid Classes="management-window-heading-row" Grid.Row="1">
         <StackPanel Spacing="3">
           <TextBlock Text="提示词档案" Classes="management-window-heading" />
-          <TextBlock Classes="management-window-description" Text="分别维护翻译和解析提示词；主页面可独立选择各自使用的档案。" />
+          <TextBlock Classes="management-window-description" Text="分别维护翻译、原文解析和选词解析提示词；主页面可独立选择各自使用的档案。" />
         </StackPanel>
       </Grid>
 

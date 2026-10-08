@@ -1,4 +1,26 @@
 <Styles xmlns="https://github.com/avaloniaui">
+  <Style Selector="Border.management-window-surface">
+    <Setter Property="Margin" Value="8" />
+    <Setter Property="CornerRadius" Value="14" />
+    <Setter Property="Background" Value="#FAF8F5" />
+    <Setter Property="BorderBrush" Value="#DCD2C8" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="ClipToBounds" Value="True" />
+  </Style>
+  <Style Selector="Grid.management-window-titlebar">
+    <Setter Property="Margin" Value="10,2,8,0" />
+  </Style>
+  <Style Selector="Image.management-window-icon">
+    <Setter Property="Width" Value="20" />
+    <Setter Property="Height" Value="20" />
+    <Setter Property="Stretch" Value="Uniform" />
+  </Style>
+  <Style Selector="TextBlock.management-window-title">
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Foreground" Value="#756B63" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
   <Style Selector="Button.window-control">
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Foreground" Value="#655A52" />

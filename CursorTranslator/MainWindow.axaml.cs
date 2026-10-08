@@ -9,6 +9,7 @@ using CursorTranslator.Models;
 using CursorTranslator.Services;
 using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 
 namespace CursorTranslator;
 
@@ -22,18 +23,18 @@ public partial class MainWindow : Window
     private readonly StartupRegistrationService _startupRegistration = new();
     private readonly DispatcherTimer _autoSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly DispatcherTimer _monitorDurationTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly DispatcherTimer _overlayCloseDelayTimer = new();
     private readonly Stopwatch _monitorDurationStopwatch = new();
     private readonly InputMonitor _monitor;
     private readonly TranslationOverlay _overlay;
     private AppSettings _settings;
     private CardAppearanceSettings _cardAppearance;
     private CancellationTokenSource? _deepAnalysisCancellation;
+    private SettingsWindow? _translationSettingsWindow;
     private long _latestDeepAnalysis;
     private bool _isMonitoring;
     private string _monitorStateLabel = "已退出";
     private bool _allowClose;
-    private bool _updatingTriggerControls;
-    private bool _normalizingMaximumTranslationCharacters;
     private BorderlessWindowResizeSession? _windowResizeSession;
     private bool _updatingTranslationProviderControls;
     private bool _updatingSpeechProviderControls = true;
@@ -41,13 +42,21 @@ public partial class MainWindow : Window
     private long _speechGeneration;
     private CancellationTokenSource? _translationCancellation;
     private CancellationTokenSource? _speechCancellation;
+    private bool _speechPlaybackFromOverlay;
     private MonitoredText? _queuedTranslation;
     private bool _translationWorkerRunning;
+    private string _latestTestTranslation = "";
 
     public MainWindow()
     {
         InitializeComponent();
+        WindowFrameHelper.Track(this, WindowSurface);
         _settings = _settingsStore.Load();
+        _overlayCloseDelayTimer.Tick += (_, _) =>
+        {
+            _overlayCloseDelayTimer.Stop();
+            _overlay.HideOverlay();
+        };
         TranslationAiProfileComboBox.ItemsSource = _settings.AiProfiles;
         TranslationAiProfileComboBox.SelectedItem = _settings.ActiveAiProfile;
         AnalysisAiProfileComboBox.ItemsSource = _settings.AiProfiles;
@@ -56,6 +65,8 @@ public partial class MainWindow : Window
         TranslationPromptProfileComboBox.SelectedItem = _settings.ActiveTranslationPromptProfile;
         AnalysisPromptProfileComboBox.ItemsSource = _settings.AnalysisPromptProfiles;
         AnalysisPromptProfileComboBox.SelectedItem = _settings.ActiveAnalysisPromptProfile;
+        SelectedTranslationTermPromptProfileComboBox.ItemsSource = _settings.SelectedTranslationTermPromptProfiles;
+        SelectedTranslationTermPromptProfileComboBox.SelectedItem = _settings.ActiveSelectedTranslationTermPromptProfile;
         HttpTranslationProfileComboBox.ItemsSource = _settings.TranslationHttpProfiles;
         HttpTranslationProfileComboBox.SelectedItem = _settings.ActiveTranslationHttpProfile;
         SpeechAiProfileComboBox.ItemsSource = _settings.SpeechAiProfiles;
@@ -79,27 +90,27 @@ public partial class MainWindow : Window
             : AiProviderTab;
         UpdateTranslationProviderTabIndicators();
         _updatingTranslationProviderControls = false;
-        InitializeTriggerControls();
-        MaximumTranslationCharactersBox.Text = Math.Clamp(
-            _settings.MaximumTranslationCharacters,
-            AppSettings.MinimumMaximumTranslationCharacters,
-            AppSettings.MaximumMaximumTranslationCharacters).ToString(CultureInfo.InvariantCulture);
         UpdateStartupButton();
         SetStatus(_settings.IsConfigured ? "就绪" : "设置翻译接口");
         _cardAppearance = _cardAppearanceStore.Load();
         _overlay = new TranslationOverlay();
         _overlay.ApplyAppearance(_cardAppearance);
         _overlay.AppearanceChanged += OnCardAppearanceChanged;
-        _overlay.DeepAnalysisRequested += OnDeepAnalysisRequested;
+        _overlay.SourceTranslationAnalysisRequested += OnSourceTranslationAnalysisRequested;
+        _overlay.SelectedTranslationTermAnalysisRequested += OnDeepAnalysisRequested;
         _overlay.DeepAnalysisDismissed += OnDeepAnalysisDismissed;
         _overlay.SpeechRequested += OnSpeechRequested;
+        _overlay.SpeechStopRequested += OnOverlaySpeechStopRequested;
         UpdateDeepAnalysisAvailability();
+        UpdateSpeechAvailability();
         _monitor = new InputMonitor();
         _overlay.NativeWindowHandleAvailable += _monitor.SetOverlayWindowHandle;
         _overlay.UserInteraction += _monitor.PreserveTargetForOverlayInteraction;
         ApplyTranslationTriggerSettings();
         _monitor.TextCommitted += OnTextCommitted;
         _monitor.InputCleared += OnInputCleared;
+        _monitor.FocusLost += OnInputFocusLost;
+        _monitor.TargetFound += OnInputTargetFound;
         _monitor.Diagnostic += message => Dispatcher.UIThread.Post(() =>
         {
             if (message.Contains("异常", StringComparison.Ordinal)
@@ -155,8 +166,15 @@ public partial class MainWindow : Window
         _cardAppearanceStore.Save(settings);
     }
 
-    private void OnDeepAnalysisRequested(string selectedText, string context)
-        => Dispatcher.UIThread.Post(() => _ = ShowDeepAnalysisAsync(selectedText, context), DispatcherPriority.Background);
+    private void OnSourceTranslationAnalysisRequested(string sourceText, string translation)
+        => Dispatcher.UIThread.Post(
+            () => _ = ShowDeepAnalysisAsync(sourceText, translation, sourceText, analyzeSourceTranslation: true),
+            DispatcherPriority.Background);
+
+    private void OnDeepAnalysisRequested(string selectedText, string translationContext, string sourceText)
+        => Dispatcher.UIThread.Post(
+            () => _ = ShowDeepAnalysisAsync(selectedText, translationContext, sourceText, analyzeSourceTranslation: false),
+            DispatcherPriority.Background);
 
     private void OnDeepAnalysisDismissed()
     {
@@ -164,32 +182,87 @@ public partial class MainWindow : Window
         _deepAnalysisCancellation?.Cancel();
     }
 
-    private async Task ShowDeepAnalysisAsync(string selectedText, string context)
+    private async Task ShowDeepAnalysisAsync(
+        string analysisTarget,
+        string translationContext,
+        string sourceText,
+        bool analyzeSourceTranslation)
     {
-        if (string.IsNullOrWhiteSpace(selectedText)) return;
+        if (analyzeSourceTranslation
+                ? string.IsNullOrWhiteSpace(sourceText)
+                : string.IsNullOrWhiteSpace(analysisTarget))
+            return;
 
         SaveSettings();
         _deepAnalysisCancellation?.Cancel();
         var requestId = Interlocked.Increment(ref _latestDeepAnalysis);
         _overlay.ShowDeepAnalysisPending();
-        if (!_settings.IsDeepAnalysisConfigured)
+        var isAnalysisConfigured = analyzeSourceTranslation
+            ? _settings.IsDeepAnalysisConfigured
+            : _settings.IsSelectedTranslationTermAnalysisConfigured;
+        if (!isAnalysisConfigured)
         {
-            _overlay.ShowDeepAnalysisError("请为详解选择并配置 AI 接口地址、模型名称和深度分析指令。");
+            _overlay.ShowDeepAnalysisError(analyzeSourceTranslation
+                ? "请为原文解析选择并配置 AI 接口地址、模型名称和解析提示词。"
+                : "请为选词解析选择并配置 AI 接口地址、模型名称和选词提示词。" );
             return;
         }
 
         var cancellation = new CancellationTokenSource();
         _deepAnalysisCancellation = cancellation;
+        int? reasoningTokens = null;
+        using var liveOutput = new UiStreamBuffer(
+            result =>
+            {
+                if (requestId == Interlocked.Read(ref _latestDeepAnalysis))
+                    _overlay.ShowDeepAnalysisStreamingResult(result);
+            },
+            result =>
+            {
+                if (requestId == Interlocked.Read(ref _latestDeepAnalysis))
+                    _overlay.ShowDeepAnalysisResult(result);
+            });
         try
         {
-            var answer = await _translation.ExplainMeaningAsync(
-                _settings,
-                _settings.ActiveAnalysisAiProfile!,
-                selectedText,
-                context,
-                cancellation.Token);
-            if (requestId == Interlocked.Read(ref _latestDeepAnalysis))
-                _overlay.ShowDeepAnalysisResult(answer);
+            var analysisProfile = _settings.ActiveAnalysisAiProfile!;
+            var answer = analyzeSourceTranslation
+                ? await _translation.ExplainSourceTranslationAsync(
+                    _settings,
+                    analysisProfile,
+                    sourceText,
+                    translationContext,
+                    cancellation.Token,
+                    onDelta: liveOutput.Append,
+                    onProgress: progress =>
+                    {
+                        if (progress.Phase == AiStreamPhase.Completed)
+                            reasoningTokens = progress.ReasoningTokens;
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            if (requestId == Interlocked.Read(ref _latestDeepAnalysis))
+                                _overlay.ShowDeepAnalysisProgress(progress);
+                        });
+                    })
+                : await _translation.ExplainSelectedTranslationTermAsync(
+                    _settings,
+                    analysisProfile,
+                    analysisTarget,
+                    translationContext,
+                    sourceText,
+                    cancellation.Token,
+                    onDelta: liveOutput.Append,
+                    onProgress: progress =>
+                    {
+                        if (progress.Phase == AiStreamPhase.Completed)
+                            reasoningTokens = progress.ReasoningTokens;
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            if (requestId == Interlocked.Read(ref _latestDeepAnalysis))
+                                _overlay.ShowDeepAnalysisProgress(progress);
+                        });
+                    });
+            liveOutput.Complete(answer);
+            _overlay.ShowDeepAnalysisProgress(new AiStreamProgress(AiStreamPhase.Completed, reasoningTokens));
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception ex)
@@ -212,32 +285,10 @@ public partial class MainWindow : Window
             ?? _settings.ActiveTranslationPromptProfile;
         var analysisPromptProfile = AnalysisPromptProfileComboBox.SelectedItem as PromptProfile
             ?? _settings.ActiveAnalysisPromptProfile;
+        var selectedTranslationTermPromptProfile = SelectedTranslationTermPromptProfileComboBox.SelectedItem as PromptProfile
+            ?? _settings.ActiveSelectedTranslationTermPromptProfile;
         var speechAiProfile = SpeechAiProfileComboBox.SelectedItem as SpeechAiConnectionProfile
             ?? _settings.ActiveSpeechAiProfile;
-        var inactivityDelaySeconds = _settings.InactivityDelaySeconds;
-        var hasValidDelay = decimal.TryParse(
-                InactivityDelaySecondsBox.Text?.Trim(),
-                NumberStyles.AllowDecimalPoint,
-                CultureInfo.InvariantCulture,
-                out var parsedDelay)
-            && parsedDelay >= AppSettings.MinimumInactivityDelaySeconds
-            && parsedDelay <= AppSettings.MaximumInactivityDelaySeconds;
-        if (hasValidDelay)
-        {
-            inactivityDelaySeconds = parsedDelay;
-        }
-
-        var maximumTranslationCharacters = _settings.MaximumTranslationCharacters;
-        var hasValidMaximumCharacters = int.TryParse(
-                MaximumTranslationCharactersBox.Text?.Trim(),
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out var parsedMaximumCharacters)
-            && parsedMaximumCharacters >= AppSettings.MinimumMaximumTranslationCharacters
-            && parsedMaximumCharacters <= AppSettings.MaximumMaximumTranslationCharacters;
-        if (hasValidMaximumCharacters)
-            maximumTranslationCharacters = parsedMaximumCharacters;
-
         _settings = new AppSettings
         {
             Endpoint = (TranslationAiProfileComboBox.SelectedItem as AiConnectionProfile)?.Endpoint ?? "",
@@ -250,6 +301,8 @@ public partial class MainWindow : Window
             ActiveTranslationPromptProfileId = translationPromptProfile?.Id ?? "",
             AnalysisPromptProfiles = _settings.AnalysisPromptProfiles,
             ActiveAnalysisPromptProfileId = analysisPromptProfile?.Id ?? "",
+            SelectedTranslationTermPromptProfiles = _settings.SelectedTranslationTermPromptProfiles,
+            ActiveSelectedTranslationTermPromptProfileId = selectedTranslationTermPromptProfile?.Id ?? "",
             TranslationProvider = EnableHttpProviderSwitch.IsChecked == true
                 ? TranslationProviderKind.HttpTranslation
                 : TranslationProviderKind.OpenAiCompatible,
@@ -273,20 +326,22 @@ public partial class MainWindow : Window
             RealTimeSpeechEnabled = RealTimeSpeechCheckBox.IsChecked == true,
             SystemPrompt = translationPromptProfile?.Prompt ?? "",
             DeepAnalysisPrompt = analysisPromptProfile?.Prompt ?? "",
-            TranslateOnTextChange = TranslateOnTextChangeCheckBox.IsChecked == true,
-            TranslateOnSentenceEnd = TranslateOnSentenceEndCheckBox.IsChecked == true,
-            TranslateAfterInactivity = TranslateAfterInactivityCheckBox.IsChecked == true,
-            InactivityDelaySeconds = inactivityDelaySeconds,
-            MaximumTranslationCharacters = maximumTranslationCharacters
+            SelectedTranslationTermPrompt = selectedTranslationTermPromptProfile?.Prompt
+                ?? AppSettings.DefaultSelectedTranslationTermPrompt,
+            TranslateOnTextChange = _settings.TranslateOnTextChange,
+            TranslateOnSentenceEnd = _settings.TranslateOnSentenceEnd,
+            TranslateAfterCopy = _settings.TranslateAfterCopy,
+            TranslateAfterInactivity = _settings.TranslateAfterInactivity,
+            InactivityDelaySeconds = _settings.InactivityDelaySeconds,
+            MaximumTranslationCharacters = _settings.MaximumTranslationCharacters,
+            OverlayFocusLossCloseDelayEnabled = _settings.OverlayFocusLossCloseDelayEnabled,
+            OverlayFocusLossCloseDelaySeconds = _settings.OverlayFocusLossCloseDelaySeconds
         };
         UpdateDeepAnalysisAvailability();
+        UpdateSpeechAvailability();
         ApplyTranslationTriggerSettings();
         _settingsStore.Save(_settings);
         var validationIssues = new List<string>();
-        if (!hasValidDelay && TranslateAfterInactivityCheckBox.IsChecked == true)
-            validationIssues.Add("停顿秒数请输入 0.5 到 60 之间的数字");
-        if (!hasValidMaximumCharacters)
-            validationIssues.Add("最多翻译请输入 5 到 1000 之间的整数");
         if (_settings.RealTimeSpeechEnabled && !_settings.IsSpeechConfigured)
             validationIssues.Add(_settings.SpeechProvider == SpeechProviderKind.GenericHttp
                 ? "实时语音请配置有效的 HTTP 接口档案"
@@ -302,64 +357,11 @@ public partial class MainWindow : Window
         AnalysisAiProfileComboBox.SelectionChanged += AnalysisAiProfile_Changed;
         TranslationPromptProfileComboBox.SelectionChanged += TranslationPromptProfile_Changed;
         AnalysisPromptProfileComboBox.SelectionChanged += AnalysisPromptProfile_Changed;
+        SelectedTranslationTermPromptProfileComboBox.SelectionChanged += SelectedTranslationTermPromptProfile_Changed;
         HttpTranslationProfileComboBox.SelectionChanged += HttpTranslationProfile_Changed;
         SpeechAiProfileComboBox.SelectionChanged += SpeechAiProfile_Changed;
         HttpSpeechProfileComboBox.SelectionChanged += HttpSpeechProfile_Changed;
-        InactivityDelaySecondsBox.TextChanged += SettingsText_Changed;
-        MaximumTranslationCharactersBox.TextChanged += MaximumTranslationCharactersBox_TextChanged;
-        MaximumTranslationCharactersBox.TextInput += MaximumTranslationCharactersBox_TextInput;
-        MaximumTranslationCharactersBox.LostFocus += MaximumTranslationCharactersBox_LostFocus;
     }
-
-    private void MaximumTranslationCharactersBox_TextInput(object? sender, TextInputEventArgs e)
-    {
-        if (e.Text is { } input && input.Any(character => !char.IsAsciiDigit(character)))
-            e.Handled = true;
-    }
-
-    private void MaximumTranslationCharactersBox_TextChanged(object? sender, TextChangedEventArgs e)
-    {
-        if (_normalizingMaximumTranslationCharacters) return;
-
-        var currentText = MaximumTranslationCharactersBox.Text ?? "";
-        var caretIndex = Math.Clamp(MaximumTranslationCharactersBox.CaretIndex, 0, currentText.Length);
-        var sanitizedText = new string(currentText.Where(char.IsAsciiDigit).Take(4).ToArray());
-        var sanitizedCaretIndex = currentText[..caretIndex].Count(char.IsAsciiDigit);
-        if (int.TryParse(sanitizedText, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
-            && parsed > AppSettings.MaximumMaximumTranslationCharacters)
-        {
-            sanitizedText = AppSettings.MaximumMaximumTranslationCharacters.ToString(CultureInfo.InvariantCulture);
-            sanitizedCaretIndex = Math.Min(sanitizedCaretIndex, sanitizedText.Length);
-        }
-
-        if (!string.Equals(currentText, sanitizedText, StringComparison.Ordinal))
-        {
-            _normalizingMaximumTranslationCharacters = true;
-            MaximumTranslationCharactersBox.Text = sanitizedText;
-            MaximumTranslationCharactersBox.CaretIndex = Math.Min(sanitizedCaretIndex, sanitizedText.Length);
-            _normalizingMaximumTranslationCharacters = false;
-        }
-
-        ScheduleAutoSave();
-    }
-
-    private void MaximumTranslationCharactersBox_LostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        var maximumCharacters = int.TryParse(
-                MaximumTranslationCharactersBox.Text?.Trim(),
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out var parsedMaximumCharacters)
-            ? parsedMaximumCharacters
-            : _settings.MaximumTranslationCharacters;
-        MaximumTranslationCharactersBox.Text = Math.Clamp(
-            maximumCharacters,
-            AppSettings.MinimumMaximumTranslationCharacters,
-            AppSettings.MaximumMaximumTranslationCharacters).ToString(CultureInfo.InvariantCulture);
-    }
-
-    private void SettingsText_Changed(object? sender, TextChangedEventArgs e)
-        => ScheduleAutoSave();
 
     private void HttpSpeechProfile_Changed(object? sender, SelectionChangedEventArgs e)
     {
@@ -413,6 +415,17 @@ public partial class MainWindow : Window
         ScheduleAutoSave();
     }
 
+    private void SelectedTranslationTermPromptProfile_Changed(object? sender, SelectionChangedEventArgs e)
+    {
+        if (SelectedTranslationTermPromptProfileComboBox.SelectedItem is PromptProfile selected)
+        {
+            _settings.ActiveSelectedTranslationTermPromptProfileId = selected.Id;
+            _settings.SelectedTranslationTermPrompt = selected.Prompt;
+        }
+        UpdateDeepAnalysisAvailability();
+        ScheduleAutoSave();
+    }
+
     private async void ManageAiProfiles_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         SaveSettings();
@@ -445,20 +458,28 @@ public partial class MainWindow : Window
             _settings.TranslationPromptProfiles,
             _settings.ActiveTranslationPromptProfileId,
             _settings.AnalysisPromptProfiles,
-            _settings.ActiveAnalysisPromptProfileId);
+            _settings.ActiveAnalysisPromptProfileId,
+            _settings.SelectedTranslationTermPromptProfiles,
+            _settings.ActiveSelectedTranslationTermPromptProfileId);
         var saved = await editor.ShowDialog<bool>(this);
         if (!saved) return;
 
         var translationPromptId = _settings.ActiveTranslationPromptProfileId;
         var analysisPromptId = _settings.ActiveAnalysisPromptProfileId;
+        var selectedTranslationTermPromptId = _settings.ActiveSelectedTranslationTermPromptProfileId;
         _settings.TranslationPromptProfiles = editor.TranslationProfiles.Select(profile => profile.Copy()).ToList();
         _settings.AnalysisPromptProfiles = editor.AnalysisProfiles.Select(profile => profile.Copy()).ToList();
+        _settings.SelectedTranslationTermPromptProfiles = editor.SelectedTranslationTermProfiles
+            .Select(profile => profile.Copy()).ToList();
         if (!_settings.TranslationPromptProfiles.Any(profile => profile.Id == translationPromptId))
             translationPromptId = _settings.TranslationPromptProfiles[0].Id;
         if (!_settings.AnalysisPromptProfiles.Any(profile => profile.Id == analysisPromptId))
             analysisPromptId = _settings.AnalysisPromptProfiles[0].Id;
+        if (!_settings.SelectedTranslationTermPromptProfiles.Any(profile => profile.Id == selectedTranslationTermPromptId))
+            selectedTranslationTermPromptId = _settings.SelectedTranslationTermPromptProfiles[0].Id;
         _settings.ActiveTranslationPromptProfileId = translationPromptId;
         _settings.ActiveAnalysisPromptProfileId = analysisPromptId;
+        _settings.ActiveSelectedTranslationTermPromptProfileId = selectedTranslationTermPromptId;
 
         TranslationPromptProfileComboBox.ItemsSource = null;
         TranslationPromptProfileComboBox.ItemsSource = _settings.TranslationPromptProfiles;
@@ -466,6 +487,9 @@ public partial class MainWindow : Window
         AnalysisPromptProfileComboBox.ItemsSource = null;
         AnalysisPromptProfileComboBox.ItemsSource = _settings.AnalysisPromptProfiles;
         AnalysisPromptProfileComboBox.SelectedItem = _settings.ActiveAnalysisPromptProfile;
+        SelectedTranslationTermPromptProfileComboBox.ItemsSource = null;
+        SelectedTranslationTermPromptProfileComboBox.ItemsSource = _settings.SelectedTranslationTermPromptProfiles;
+        SelectedTranslationTermPromptProfileComboBox.SelectedItem = _settings.ActiveSelectedTranslationTermPromptProfile;
         SaveSettings();
     }
 
@@ -574,7 +598,12 @@ public partial class MainWindow : Window
     }
 
     private void UpdateDeepAnalysisAvailability()
-        => _overlay.SetDeepAnalysisAvailable(_settings.IsDeepAnalysisConfigured);
+        => _overlay.SetDeepAnalysisAvailability(
+            _settings.IsDeepAnalysisConfigured,
+            _settings.IsSelectedTranslationTermAnalysisConfigured);
+
+    private void UpdateSpeechAvailability()
+        => _overlay.SetSpeechAvailability(_settings.IsSpeechConfigured);
 
     private void SpeechProviderSwitch_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -670,6 +699,24 @@ public partial class MainWindow : Window
         Avalonia.Controls.ToolTip.SetTip(StatusText, message);
     }
 
+    private void SetAiProgressStatus(AiStreamProgress progress)
+    {
+        if (progress.Phase == AiStreamPhase.Completed) return;
+        SetStatus(progress.Phase switch
+        {
+            AiStreamPhase.WaitingForResponse => "AI 已发送请求，等待模型响应…",
+            AiStreamPhase.Thinking => "AI 正在深度思考…",
+            AiStreamPhase.Generating => "AI 正在生成结果…",
+            _ => "AI 正在处理…"
+        });
+    }
+
+    private void SetTestResult(string markdown)
+        => MarkdownTextRenderer.Render(
+            markdown,
+            TestResultContent,
+            new SolidColorBrush(Avalonia.Media.Color.Parse("#51463F")));
+
     private void WindowSurface_PointerPressed(object? sender, PointerPressedEventArgs e)
         => WindowChrome.BeginMoveDrag(this, e);
 
@@ -723,6 +770,61 @@ public partial class MainWindow : Window
     private async void ShowStatistics_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => await new DailyStatisticsWindow(_usageStatisticsStore).ShowDialog(this);
 
+    private void OpenTranslationSettings_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_translationSettingsWindow is { IsVisible: true })
+        {
+            _translationSettingsWindow.Activate();
+            return;
+        }
+
+        var settingsWindow = new SettingsWindow(_settings);
+        _translationSettingsWindow = settingsWindow;
+        settingsWindow.PreferencesChanged += OnTranslationPreferencesChanged;
+        settingsWindow.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_translationSettingsWindow, settingsWindow))
+                _translationSettingsWindow = null;
+        };
+        settingsWindow.Show(this);
+    }
+
+    private void OnTranslationPreferencesChanged(
+        bool translateOnTextChange,
+        bool translateOnSentenceEnd,
+        bool translateAfterCopy,
+        bool translateAfterInactivity,
+        decimal inactivityDelaySeconds,
+        int maximumTranslationCharacters,
+        bool overlayFocusLossCloseDelayEnabled,
+        int overlayFocusLossCloseDelaySeconds)
+    {
+        var closeDelayChanged = _settings.OverlayFocusLossCloseDelayEnabled != overlayFocusLossCloseDelayEnabled
+            || _settings.OverlayFocusLossCloseDelaySeconds != overlayFocusLossCloseDelaySeconds;
+        _settings.TranslateOnTextChange = translateOnTextChange;
+        _settings.TranslateOnSentenceEnd = translateOnSentenceEnd;
+        _settings.TranslateAfterCopy = translateAfterCopy;
+        _settings.TranslateAfterInactivity = translateAfterInactivity;
+        _settings.InactivityDelaySeconds = inactivityDelaySeconds;
+        _settings.MaximumTranslationCharacters = maximumTranslationCharacters;
+        _settings.OverlayFocusLossCloseDelayEnabled = overlayFocusLossCloseDelayEnabled;
+        _settings.OverlayFocusLossCloseDelaySeconds = overlayFocusLossCloseDelaySeconds;
+        ApplyTranslationTriggerSettings();
+        if (closeDelayChanged && _overlayCloseDelayTimer.IsEnabled)
+        {
+            _overlayCloseDelayTimer.Stop();
+            if (!overlayFocusLossCloseDelayEnabled)
+                _overlay.HideOverlay();
+            else
+            {
+                _overlayCloseDelayTimer.Interval = TimeSpan.FromSeconds(overlayFocusLossCloseDelaySeconds);
+                _overlayCloseDelayTimer.Start();
+            }
+        }
+        _settingsStore.Save(_settings);
+        SetStatus("翻译设置已自动保存");
+    }
+
     private async void CopyRecentLogs_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         try
@@ -765,73 +867,12 @@ public partial class MainWindow : Window
         }
     }
 
-    private void InitializeTriggerControls()
-    {
-        _updatingTriggerControls = true;
-        TranslateOnTextChangeCheckBox.IsChecked = _settings.TranslateOnTextChange;
-        TranslateOnSentenceEndCheckBox.IsChecked = _settings.TranslateOnSentenceEnd;
-        TranslateAfterInactivityCheckBox.IsChecked = _settings.TranslateAfterInactivity;
-        InactivityDelaySecondsBox.Text = Math.Clamp(
-            _settings.InactivityDelaySeconds,
-            AppSettings.MinimumInactivityDelaySeconds,
-            AppSettings.MaximumInactivityDelaySeconds).ToString("0.##", CultureInfo.InvariantCulture);
-
-        if (!TranslateOnTextChangeCheckBox.IsChecked.GetValueOrDefault()
-            && !TranslateOnSentenceEndCheckBox.IsChecked.GetValueOrDefault()
-            && !TranslateAfterInactivityCheckBox.IsChecked.GetValueOrDefault())
-            TranslateOnTextChangeCheckBox.IsChecked = true;
-
-        if (TranslateOnTextChangeCheckBox.IsChecked == true)
-        {
-            TranslateOnSentenceEndCheckBox.IsChecked = false;
-            TranslateAfterInactivityCheckBox.IsChecked = false;
-        }
-        _updatingTriggerControls = false;
-        RefreshTriggerControls();
-    }
-
-    private void TranslationTriggerOption_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (_updatingTriggerControls) return;
-
-        _updatingTriggerControls = true;
-        if (ReferenceEquals(sender, TranslateOnTextChangeCheckBox)
-            && TranslateOnTextChangeCheckBox.IsChecked == true)
-        {
-            TranslateOnSentenceEndCheckBox.IsChecked = false;
-            TranslateAfterInactivityCheckBox.IsChecked = false;
-        }
-        else if (sender is Avalonia.Controls.CheckBox changedCheckBox && changedCheckBox.IsChecked == true)
-        {
-            TranslateOnTextChangeCheckBox.IsChecked = false;
-        }
-
-        if (TranslateOnTextChangeCheckBox.IsChecked != true
-            && TranslateOnSentenceEndCheckBox.IsChecked != true
-            && TranslateAfterInactivityCheckBox.IsChecked != true)
-            TranslateOnSentenceEndCheckBox.IsChecked = true;
-
-        _updatingTriggerControls = false;
-        RefreshTriggerControls();
-        ScheduleAutoSave();
-    }
-
-    private void RefreshTriggerControls()
-    {
-        var immediateMode = TranslateOnTextChangeCheckBox.IsChecked == true;
-        TranslateOnSentenceEndCheckBox.IsEnabled = !immediateMode;
-        TranslateAfterInactivityCheckBox.IsEnabled = !immediateMode;
-        InactivityDelaySecondsBox.IsEnabled = !immediateMode && TranslateAfterInactivityCheckBox.IsChecked == true;
-    }
-
     private void ApplyTranslationTriggerSettings()
     {
-        _settings.TranslateOnTextChange = TranslateOnTextChangeCheckBox.IsChecked == true;
-        _settings.TranslateOnSentenceEnd = TranslateOnSentenceEndCheckBox.IsChecked == true;
-        _settings.TranslateAfterInactivity = TranslateAfterInactivityCheckBox.IsChecked == true;
         _monitor.ConfigureTranslationTriggers(
             _settings.TranslateOnTextChange,
             _settings.TranslateOnSentenceEnd,
+            _settings.TranslateAfterCopy,
             _settings.TranslateAfterInactivity,
             (int)(_settings.InactivityDelaySeconds * 1000m));
     }
@@ -849,9 +890,22 @@ public partial class MainWindow : Window
             SetStatus("请先输入文本");
             return;
         }
+        if (TranslationService.IsUrl(text))
+        {
+            _latestTestTranslation = "";
+            SetTestResult("");
+            TestSpeakButton.IsEnabled = false;
+            SetStatus("网址不会翻译");
+            return;
+        }
 
         TestButton.IsEnabled = false;
+        TestAnalyzeButton.IsEnabled = false;
+        TestSpeakButton.IsEnabled = false;
+        _latestTestTranslation = "";
+        SetTestResult("正在翻译…");
         var stopwatch = Stopwatch.StartNew();
+        using var liveOutput = new UiStreamBuffer(SetTestResult);
         try
         {
             var submittedText = TranslationService.GetSubmittedText(
@@ -862,10 +916,13 @@ public partial class MainWindow : Window
                 settings,
                 text,
                 CancellationToken.None,
-                applyMaximumTranslationLimit: false);
+                applyMaximumTranslationLimit: false,
+                onDelta: liveOutput.Append,
+                onProgress: progress => Dispatcher.UIThread.Post(() => SetAiProgressStatus(progress)));
+            liveOutput.Complete(translated);
             if (!string.IsNullOrWhiteSpace(translated))
                 await RecordCompletedTranslationAsync(submittedText, settings.TranslationProvider);
-            TestResultText.Text = translated;
+            _latestTestTranslation = translated;
             TestSpeakButton.IsEnabled = !string.IsNullOrWhiteSpace(translated);
             stopwatch.Stop();
             SetStatus($"试译完成 · {providerName} 接口 · {stopwatch.Elapsed.TotalMilliseconds:F0} ms");
@@ -875,17 +932,70 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             AppLog.Error("Translation test", "Test translation request failed.", ex);
+            SetTestResult($"翻译失败：{ex.Message}");
             SetStatus($"翻译失败：{ex.Message}");
         }
         finally
         {
             TestButton.IsEnabled = true;
+            TestAnalyzeButton.IsEnabled = true;
+        }
+    }
+
+    private async void AnalyzeTest_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        SaveSettings();
+        var settings = _settings;
+        var profile = settings.ActiveAnalysisAiProfile;
+        var text = TestInputBox.Text;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            SetStatus("请先输入要解析的文本");
+            return;
+        }
+
+        if (!settings.IsDeepAnalysisConfigured || profile is null)
+        {
+            SetStatus("请先配置解析 AI 接口和解析提示词");
+            return;
+        }
+
+        TestButton.IsEnabled = false;
+        TestAnalyzeButton.IsEnabled = false;
+        TestSpeakButton.IsEnabled = false;
+        SetTestResult("正在解析…");
+        var stopwatch = Stopwatch.StartNew();
+        using var liveOutput = new UiStreamBuffer(SetTestResult);
+        try
+        {
+            var analysis = await _translation.ExplainSourceTranslationAsync(
+                settings,
+                profile,
+                text,
+                existingTranslation: null,
+                cancellationToken: CancellationToken.None,
+                onDelta: liveOutput.Append,
+                onProgress: progress => Dispatcher.UIThread.Post(() => SetAiProgressStatus(progress)));
+            liveOutput.Complete(analysis);
+            stopwatch.Stop();
+            SetStatus($"试译解析完成 · AI · {stopwatch.Elapsed.TotalMilliseconds:F0} ms");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Translation test analysis", "Test analysis request failed.", ex);
+            SetTestResult($"解析失败：{ex.Message}");
+            SetStatus($"解析失败：{ex.Message}");
+        }
+        finally
+        {
+            TestButton.IsEnabled = true;
+            TestAnalyzeButton.IsEnabled = true;
         }
     }
 
     private void TestSpeak_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        var translated = TestResultText.Text;
+        var translated = _latestTestTranslation;
         if (!string.IsNullOrWhiteSpace(translated))
             StartSpeechPlayback(translated);
     }
@@ -907,6 +1017,7 @@ public partial class MainWindow : Window
     {
         var wasMonitoring = _isMonitoring;
         _isMonitoring = false;
+        _overlayCloseDelayTimer.Stop();
         _monitorDurationTimer.Stop();
         _monitorDurationStopwatch.Reset();
         CancelTranslationQueue();
@@ -977,9 +1088,13 @@ public partial class MainWindow : Window
         => character is '"' or '\'' or '”' or '’' or '」' or '』' or '）' or ')' or '】' or ']';
 
     private void OnSpeechRequested(string text)
-        => Dispatcher.UIThread.Post(() => StartSpeechPlayback(text), DispatcherPriority.Background);
+        => Dispatcher.UIThread.Post(() =>
+        {
+            if (_overlay.IsVisible)
+                StartSpeechPlayback(text, fromOverlay: true);
+        }, DispatcherPriority.Background);
 
-    private void StartSpeechPlayback(string text)
+    private void StartSpeechPlayback(string text, bool fromOverlay = false)
     {
         CancelSpeechPlayback();
         var speechAiProfile = SpeechAiProfileComboBox.SelectedItem as SpeechAiConnectionProfile
@@ -1012,6 +1127,7 @@ public partial class MainWindow : Window
 
         var cancellation = new CancellationTokenSource();
         _speechCancellation = cancellation;
+        _speechPlaybackFromOverlay = fromOverlay;
         var generation = Interlocked.Read(ref _speechGeneration);
         _ = SynthesizeAndPlayAsync(settings, text, cancellation, generation);
     }
@@ -1050,18 +1166,47 @@ public partial class MainWindow : Window
         Interlocked.Increment(ref _speechGeneration);
         var cancellation = _speechCancellation;
         _speechCancellation = null;
+        _speechPlaybackFromOverlay = false;
         cancellation?.Cancel();
         _speechSynthesis.Stop();
+    }
+
+    private void OnOverlaySpeechStopRequested()
+    {
+        if (_speechPlaybackFromOverlay)
+            CancelSpeechPlayback();
     }
 
     private void OnInputCleared() => Dispatcher.UIThread.Post(() =>
     {
         // Do not let a translation from the previous input target re-open the
         // overlay after focus has moved away or its text has been cleared.
+        _overlayCloseDelayTimer.Stop();
         Interlocked.Increment(ref _translationGeneration);
         _queuedTranslation = null;
         _overlay.HideOverlay();
     });
+
+    private void OnInputFocusLost() => Dispatcher.UIThread.Post(() =>
+    {
+        Interlocked.Increment(ref _translationGeneration);
+        _queuedTranslation = null;
+        if (!_isMonitoring || !_settings.OverlayFocusLossCloseDelayEnabled)
+        {
+            _overlayCloseDelayTimer.Stop();
+            _overlay.HideOverlay();
+            return;
+        }
+
+        _overlayCloseDelayTimer.Stop();
+        _overlayCloseDelayTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(
+            _settings.OverlayFocusLossCloseDelaySeconds,
+            AppSettings.MinimumOverlayFocusLossDelaySeconds,
+            AppSettings.MaximumOverlayFocusLossDelaySeconds));
+        _overlayCloseDelayTimer.Start();
+    });
+
+    private void OnInputTargetFound() => Dispatcher.UIThread.Post(() => _overlayCloseDelayTimer.Stop());
 
     private void CancelTranslationQueue()
     {
@@ -1072,11 +1217,16 @@ public partial class MainWindow : Window
 
     private void OnTextCommitted(MonitoredText text) => Dispatcher.UIThread.Post(() =>
     {
+        _overlayCloseDelayTimer.Stop();
+        if (TranslationService.IsUrl(text.Text)) return;
+
         if (!_settings.IsConfigured)
         {
             SetStatus("请配置当前翻译接口");
             return;
         }
+
+        _monitor.SetOverlaySourceRootWindowHandle(text.SourceRootWindow);
 
         // Keep at most one waiting item. A newer commit replaces the older queued text;
         // the translation already in progress is allowed to finish.
@@ -1119,8 +1269,31 @@ public partial class MainWindow : Window
                 try
                 {
                     var translationSettings = _settings;
-                    var submittedText = TranslationService.GetSubmittedText(translationSettings, text.Text);
-                    var translated = await _translation.TranslateAsync(translationSettings, text.Text, cancellationToken);
+                    var applyMaximumTranslationLimit = !text.IsCopyTriggered;
+                    var submittedText = TranslationService.GetSubmittedText(
+                        translationSettings,
+                        text.Text,
+                        applyMaximumTranslationLimit);
+                    using var liveOutput = new UiStreamBuffer(
+                        output =>
+                        {
+                            if (generation == Interlocked.Read(ref _translationGeneration)
+                                && _queuedTranslation is null && _isMonitoring)
+                                _overlay.ShowAt(text.Bounds, output, submittedText);
+                        },
+                        output => _overlay.ShowAt(text.Bounds, output, submittedText));
+                    var translated = await _translation.TranslateAsync(
+                        translationSettings,
+                        text.Text,
+                        cancellationToken,
+                        applyMaximumTranslationLimit,
+                        onDelta: liveOutput.Append,
+                        onProgress: progress => Dispatcher.UIThread.Post(() =>
+                        {
+                            if (generation == Interlocked.Read(ref _translationGeneration)
+                                && _queuedTranslation is null && _isMonitoring)
+                                SetAiProgressStatus(progress);
+                        }));
                     stopwatch.Stop();
                     var isCurrentRequest = generation == Interlocked.Read(ref _translationGeneration)
                         && _queuedTranslation is null
@@ -1133,7 +1306,7 @@ public partial class MainWindow : Window
                         && _queuedTranslation is null && _isMonitoring
                         && !cancellationToken.IsCancellationRequested)
                     {
-                        _overlay.ShowAt(text.Bounds, translated);
+                        liveOutput.Complete(translated);
                         SetStatus($"翻译完成 · 接口耗时：{stopwatch.Elapsed.TotalMilliseconds:F0} ms");
                         if (RealTimeSpeechCheckBox.IsChecked == true)
                             StartSpeechPlayback(GetLatestSentence(translated));
@@ -1161,6 +1334,98 @@ public partial class MainWindow : Window
             _translationWorkerRunning = false;
             if (_queuedTranslation is not null && _isMonitoring)
                 StartTranslationWorker();
+        }
+    }
+
+    private sealed class UiStreamBuffer : IDisposable
+    {
+        private readonly object _sync = new();
+        private readonly StringBuilder _content = new();
+        private readonly Action<string> _onUpdate;
+        private readonly Action<string>? _onComplete;
+        private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(70) };
+        private bool _dirty;
+        private int _disposed;
+
+        public UiStreamBuffer(Action<string> onUpdate, Action<string>? onComplete = null)
+        {
+            _onUpdate = onUpdate;
+            _onComplete = onComplete;
+            _timer.Tick += OnTimerTick;
+            _timer.Start();
+        }
+
+        public void Append(string delta)
+        {
+            if (string.IsNullOrEmpty(delta) || Volatile.Read(ref _disposed) != 0) return;
+            lock (_sync)
+            {
+                if (_disposed != 0) return;
+                _content.Append(delta);
+                _dirty = true;
+            }
+        }
+
+        public void Complete(string finalContent)
+        {
+            if (Volatile.Read(ref _disposed) != 0) return;
+            lock (_sync)
+            {
+                if (_disposed != 0) return;
+                _content.Clear();
+                _content.Append(finalContent);
+                _dirty = false;
+            }
+
+            RunOnUiThread(() =>
+            {
+                _timer.Stop();
+                try
+                {
+                    if (_onComplete is not null) _onComplete(finalContent);
+                    else _onUpdate(finalContent);
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Error("Streaming output", "Could not render completed stream output.", ex);
+                }
+            });
+        }
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            RunOnUiThread(() =>
+            {
+                _timer.Stop();
+                _timer.Tick -= OnTimerTick;
+            });
+        }
+
+        private void OnTimerTick(object? sender, EventArgs e)
+        {
+            string snapshot;
+            lock (_sync)
+            {
+                if (!_dirty || _disposed != 0) return;
+                snapshot = _content.ToString();
+                _dirty = false;
+            }
+
+            try
+            {
+                _onUpdate(snapshot);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("Streaming output", "Could not render partial stream output.", ex);
+            }
+        }
+
+        private static void RunOnUiThread(Action action)
+        {
+            if (Dispatcher.UIThread.CheckAccess()) action();
+            else Dispatcher.UIThread.Post(action, DispatcherPriority.Render);
         }
     }
 }

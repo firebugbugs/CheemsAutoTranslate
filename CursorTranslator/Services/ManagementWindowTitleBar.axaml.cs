@@ -10,6 +10,12 @@ public partial class ManagementWindowTitleBar : Avalonia.Controls.UserControl
     public ManagementWindowTitleBar()
     {
         InitializeComponent();
+        Loaded += (_, _) =>
+        {
+            var window = OwnerWindow;
+            if (window?.Content is Border surface)
+                WindowFrameHelper.Track(window, surface);
+        };
     }
 
     public string Title

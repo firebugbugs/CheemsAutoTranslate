@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Drawing.Text;
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -28,8 +29,12 @@ public partial class TranslationOverlay : Window
     private PixelPoint _lockedPosition;
     private bool _dragCandidate;
     private bool _isSelectingTranslationText;
+    private bool _selectedTranslationTermAnalysisAvailable;
+    private bool _speechAvailable;
     private bool _updatingAppearanceControls;
     private bool _appearanceControlsInitialized;
+    private string _sourceText = "";
+    private string _deepAnalysisMarkdown = "";
     private PixelRect? _lastCaret;
     private readonly HashSet<string> _availableFontFamilies = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer _layoutAnimationTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
@@ -50,16 +55,25 @@ public partial class TranslationOverlay : Window
     public event Action<IntPtr>? NativeWindowHandleAvailable;
     public event Action? UserInteraction;
     public event Action<CardAppearanceSettings>? AppearanceChanged;
-    public event Action<string, string>? DeepAnalysisRequested;
+    public event Action<string, string>? SourceTranslationAnalysisRequested;
+    public event Action<string, string, string>? SelectedTranslationTermAnalysisRequested;
     public event Action? DeepAnalysisDismissed;
     public event Action<string>? SpeechRequested;
+    public event Action? SpeechStopRequested;
 
-    public void SetDeepAnalysisAvailable(bool available)
+    public void SetDeepAnalysisAvailability(bool sourceTranslationAvailable, bool selectedTermAvailable)
     {
-        AnalyzeButton.IsEnabled = available;
-        Avalonia.Controls.ToolTip.SetTip(AnalyzeButton, available
-            ? "选中内容后自动分析；点击分析全部翻译"
-            : "配置解析 AI 接口后，可自动分析选区或分析全部翻译");
+        AnalyzeButton.IsEnabled = sourceTranslationAvailable;
+        _selectedTranslationTermAnalysisAvailable = selectedTermAvailable;
+        if (!selectedTermAvailable)
+            _selectionAnalysisTimer.Stop();
+        Avalonia.Controls.ToolTip.SetTip(AnalyzeButton, (sourceTranslationAvailable, selectedTermAvailable) switch
+        {
+            (true, true) => "选中译文词语后使用选词提示词自动讲解；点击分析原文译法",
+            (true, false) => "点击分析原文译法；配置选词提示词后可自动讲解选中词语",
+            (false, true) => "选中译文词语后使用选词提示词自动讲解",
+            _ => "配置 AI 接口及对应提示词后，可分析原文译法或讲解选中词语"
+        });
     }
 
     public TranslationOverlay()
@@ -88,6 +102,7 @@ public partial class TranslationOverlay : Window
             handledEventsToo: true);
         InitializeFontFamilies();
         _appearanceControlsInitialized = true;
+        Closing += (_, _) => SpeechStopRequested?.Invoke();
         _layoutAnimationTimer.Tick += LayoutAnimationTimer_Tick;
         _layoutCorrectionTimer.Tick += LayoutCorrectionTimer_Tick;
         _positionSaveTimer.Tick += (_, _) => SaveLockedPosition();
@@ -102,9 +117,10 @@ public partial class TranslationOverlay : Window
         };
     }
 
-    public void ShowAt(PixelRect caret, string text)
+    public void ShowAt(PixelRect caret, string text, string sourceText)
     {
-        if (!string.Equals(TranslationRun.Text, text, StringComparison.Ordinal))
+        if (!string.Equals(TranslationRun.Text, text, StringComparison.Ordinal)
+            || !string.Equals(_sourceText, sourceText, StringComparison.Ordinal))
         {
             _selectionAnalysisTimer.Stop();
             _isSelectingTranslationText = false;
@@ -113,13 +129,15 @@ public partial class TranslationOverlay : Window
             if (DeepAnalysisPanel.IsVisible)
             {
                 DeepAnalysisPanel.IsVisible = false;
-                DeepAnalysisResultText.Text = "";
+                DeepAnalysisContent.Children.Clear();
                 DeepAnalysisStatusText.Text = "";
+                _deepAnalysisMarkdown = "";
                 DeepAnalysisDismissed?.Invoke();
             }
         }
 
         _lastCaret = caret;
+        _sourceText = sourceText;
         TranslationRun.Text = text;
         var target = MeasureContentLayout();
         if (!IsVisible)
@@ -339,14 +357,17 @@ public partial class TranslationOverlay : Window
 
     public void HideOverlay()
     {
+        SpeechStopRequested?.Invoke();
         _layoutCorrectionTimer.Stop();
         _selectionAnalysisTimer.Stop();
         _isSelectingTranslationText = false;
         _lastAutoAnalyzedSelection = "";
+        _deepAnalysisMarkdown = "";
         StopLayoutAnimation();
         if (DeepAnalysisPanel.IsVisible)
         {
             DeepAnalysisPanel.IsVisible = false;
+            _deepAnalysisMarkdown = "";
             DeepAnalysisDismissed?.Invoke();
         }
         Hide();
@@ -356,28 +377,77 @@ public partial class TranslationOverlay : Window
     {
         AppearancePanel.IsVisible = false;
         DeepAnalysisPanel.IsVisible = true;
-        DeepAnalysisStatusText.Text = "正在分析";
-        DeepAnalysisResultText.Text = "正在等待 AI 分析…";
+        DeepAnalysisStatusText.Text = "等待模型响应";
+        _deepAnalysisMarkdown = "";
+        ShowPlainDeepAnalysisContent("正在等待 AI 响应…");
         RefreshDeepAnalysisLayout();
+    }
+
+    public void ShowDeepAnalysisProgress(AiStreamProgress progress)
+    {
+        DeepAnalysisStatusText.Text = progress.Phase switch
+        {
+            AiStreamPhase.WaitingForResponse => "等待模型响应",
+            AiStreamPhase.Thinking => "AI 正在深度思考",
+            AiStreamPhase.Generating => "正在生成分析",
+            AiStreamPhase.Completed when progress.ReasoningTokens is > 0
+                => $"分析完成 · 思考 {progress.ReasoningTokens} tokens",
+            AiStreamPhase.Completed => "分析完成",
+            _ => "正在分析"
+        };
     }
 
     public void ShowDeepAnalysisResult(string result)
     {
+        _deepAnalysisMarkdown = result;
         DeepAnalysisStatusText.Text = "分析完成";
-        DeepAnalysisResultText.Text = result;
+        MarkdownTextRenderer.Render(result, DeepAnalysisContent,
+            TranslationText.Foreground ?? new SolidColorBrush(Avalonia.Media.Color.Parse("#302B27")));
+        RefreshDeepAnalysisContextMenus();
+        RefreshDeepAnalysisLayout();
+    }
+
+    public void ShowDeepAnalysisStreamingResult(string result)
+    {
+        _deepAnalysisMarkdown = result;
+        DeepAnalysisStatusText.Text = "正在生成分析";
+        MarkdownTextRenderer.Render(result, DeepAnalysisContent,
+            TranslationText.Foreground ?? new SolidColorBrush(Avalonia.Media.Color.Parse("#302B27")));
+        RefreshDeepAnalysisContextMenus();
         RefreshDeepAnalysisLayout();
     }
 
     public void ShowDeepAnalysisError(string message)
     {
+        _deepAnalysisMarkdown = "";
         DeepAnalysisStatusText.Text = "分析失败";
-        DeepAnalysisResultText.Text = message;
+        ShowPlainDeepAnalysisContent(message);
         RefreshDeepAnalysisLayout();
+    }
+
+    private void ShowPlainDeepAnalysisContent(string text)
+    {
+        DeepAnalysisContent.Children.Clear();
+        DeepAnalysisContent.Children.Add(new SelectableTextBlock
+        {
+            Text = text,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 13,
+            Foreground = TranslationText.Foreground
+        });
+    }
+
+    public void SetSpeechAvailability(bool available)
+    {
+        _speechAvailable = available;
+        SpeakTranslationMenuItem.IsVisible = available;
+        RefreshDeepAnalysisContextMenus();
     }
 
     private void HideDeepAnalysis_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         DeepAnalysisPanel.IsVisible = false;
+        _deepAnalysisMarkdown = "";
         DeepAnalysisDismissed?.Invoke();
         RefreshDeepAnalysisLayout();
         e.Handled = true;
@@ -624,6 +694,119 @@ public partial class TranslationOverlay : Window
     private async void CopyTranslation_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => await CopyTextToClipboardAsync(GetSelectedOrFullTranslation());
 
+    private void SpeakTranslationSelection_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var text = GetSelectedOrFullTranslation().Trim();
+        if (_speechAvailable && !string.IsNullOrWhiteSpace(text))
+            SpeechRequested?.Invoke(text);
+        e.Handled = true;
+    }
+
+    private async void CopyDeepAnalysis_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => await CopyTextToClipboardAsync(GetSelectedOrFullDeepAnalysis());
+
+    private void SpeakDeepAnalysis_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var text = GetSelectedOrFullDeepAnalysis();
+        if (_speechAvailable && !string.IsNullOrWhiteSpace(text))
+            SpeechRequested?.Invoke(text);
+        e.Handled = true;
+    }
+
+    private void RefreshDeepAnalysisContextMenus()
+    {
+        foreach (var textBlock in EnumerateSelectableTextBlocks(DeepAnalysisContent))
+        {
+            var menu = new Avalonia.Controls.ContextMenu();
+            var copyItem = new Avalonia.Controls.MenuItem { Header = "复制" };
+            copyItem.Click += CopyDeepAnalysis_Click;
+            menu.Items.Add(copyItem);
+            if (_speechAvailable)
+            {
+                var speakItem = new Avalonia.Controls.MenuItem { Header = "朗读" };
+                speakItem.Click += SpeakDeepAnalysis_Click;
+                menu.Items.Add(speakItem);
+            }
+            textBlock.ContextMenu = menu;
+        }
+    }
+
+    private static IEnumerable<SelectableTextBlock> EnumerateSelectableTextBlocks(Avalonia.Controls.Control control)
+    {
+        if (control is SelectableTextBlock textBlock)
+        {
+            yield return textBlock;
+            yield break;
+        }
+
+        if (control is Avalonia.Controls.Panel panel)
+        {
+            foreach (var child in panel.Children)
+            foreach (var descendant in EnumerateSelectableTextBlocks(child))
+                yield return descendant;
+        }
+        else if (control is Avalonia.Controls.Border { Child: { } borderChild })
+        {
+            foreach (var descendant in EnumerateSelectableTextBlocks(borderChild))
+                yield return descendant;
+        }
+        else if (control is Avalonia.Controls.ContentControl { Content: Avalonia.Controls.Control content })
+        {
+            foreach (var descendant in EnumerateSelectableTextBlocks(content))
+                yield return descendant;
+        }
+    }
+
+    private string GetSelectedOrFullDeepAnalysis()
+    {
+        var selected = string.Join("\n", EnumerateSelectableTextBlocks(DeepAnalysisContent)
+            .Select(block => block.SelectedText?.Trim())
+            .Where(text => !string.IsNullOrWhiteSpace(text)));
+        return string.IsNullOrWhiteSpace(selected)
+            ? StripMarkdownForSpeech(_deepAnalysisMarkdown)
+            : selected;
+    }
+
+    private static string StripMarkdownForSpeech(string markdown)
+    {
+        var plainLines = new List<string>();
+        var inCodeFence = false;
+        foreach (var sourceLine in markdown.Replace("\r\n", "\n", StringComparison.Ordinal)
+                     .Replace('\r', '\n').Split('\n'))
+        {
+            var line = sourceLine.Trim();
+            if (line.StartsWith("```", StringComparison.Ordinal) || line.StartsWith("~~~", StringComparison.Ordinal))
+            {
+                inCodeFence = !inCodeFence;
+                continue;
+            }
+            if (line.Length == 0) continue;
+            if (inCodeFence)
+            {
+                plainLines.Add(line);
+                continue;
+            }
+            if (Regex.IsMatch(line, @"^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?$")
+                || Regex.IsMatch(line, @"^(?:\*\s*){3,}$|^(?:-\s*){3,}$|^(?:_\s*){3,}$"))
+                continue;
+
+            line = Regex.Replace(line, @"\[([^\]]+)\]\([^)]+\)", "$1");
+            line = Regex.Replace(line, @"^#{1,6}\s*", "");
+            line = Regex.Replace(line, @"^>+\s*", "");
+            line = Regex.Replace(line, @"^(?:[-+*]|\d+[.)])\s+", "");
+            line = line.Replace("**", "", StringComparison.Ordinal)
+                .Replace("__", "", StringComparison.Ordinal)
+                .Replace("~~", "", StringComparison.Ordinal)
+                .Replace("`", "", StringComparison.Ordinal)
+                .Replace("|", "，", StringComparison.Ordinal);
+            line = Regex.Replace(line, @"(?<!\w)[*_]|[*_](?!\w)", "");
+            line = Regex.Replace(line, @"\s{2,}", " ").Trim();
+            if (line.Length > 0) plainLines.Add(line);
+        }
+
+        return string.Join(Environment.NewLine, plainLines);
+    }
+
     private void SpeakerButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         var text = TranslationRun.Text ?? "";
@@ -639,8 +822,10 @@ public partial class TranslationOverlay : Window
     {
         _selectionAnalysisTimer.Stop();
         var translation = TranslationRun.Text ?? "";
-        if (AnalyzeButton.IsEnabled && !string.IsNullOrWhiteSpace(translation))
-            DeepAnalysisRequested?.Invoke(translation, translation);
+        if (AnalyzeButton.IsEnabled
+            && !string.IsNullOrWhiteSpace(_sourceText)
+            && !string.IsNullOrWhiteSpace(translation))
+            SourceTranslationAnalysisRequested?.Invoke(_sourceText, translation);
         e.Handled = true;
     }
 
@@ -673,7 +858,7 @@ public partial class TranslationOverlay : Window
             if (DeepAnalysisPanel.IsVisible)
             {
                 DeepAnalysisPanel.IsVisible = false;
-                DeepAnalysisResultText.Text = "";
+                DeepAnalysisContent.Children.Clear();
                 DeepAnalysisStatusText.Text = "";
                 DeepAnalysisDismissed?.Invoke();
                 RefreshDeepAnalysisLayout();
@@ -710,7 +895,7 @@ public partial class TranslationOverlay : Window
 
     private void ScheduleSelectionAnalysis(string selectedText)
     {
-        if (!AnalyzeButton.IsEnabled
+        if (!_selectedTranslationTermAnalysisAvailable
             || string.IsNullOrWhiteSpace(selectedText)
             || string.Equals(selectedText, _lastAutoAnalyzedSelection, StringComparison.Ordinal))
             return;
@@ -723,12 +908,15 @@ public partial class TranslationOverlay : Window
     {
         _selectionAnalysisTimer.Stop();
         var selectedText = TranslationText.SelectedText?.Trim() ?? "";
-        if (!IsVisible || !AnalyzeButton.IsEnabled || _isSelectingTranslationText || selectedText.Length == 0
+        if (!IsVisible || !_selectedTranslationTermAnalysisAvailable || _isSelectingTranslationText || selectedText.Length == 0
             || string.Equals(selectedText, _lastAutoAnalyzedSelection, StringComparison.Ordinal))
             return;
 
         _lastAutoAnalyzedSelection = selectedText;
-        DeepAnalysisRequested?.Invoke(selectedText, TranslationRun.Text ?? "");
+        SelectedTranslationTermAnalysisRequested?.Invoke(
+            selectedText,
+            TranslationRun.Text ?? "",
+            _sourceText);
     }
 
     private string GetSelectedOrFullTranslation()
@@ -738,6 +926,7 @@ public partial class TranslationOverlay : Window
 
     private void CloseButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        SpeechStopRequested?.Invoke();
         _layoutCorrectionTimer.Stop();
         _selectionAnalysisTimer.Stop();
         _isSelectingTranslationText = false;

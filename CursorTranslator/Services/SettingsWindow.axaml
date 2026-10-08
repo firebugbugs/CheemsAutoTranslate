@@ -1,0 +1,113 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:services="using:CursorTranslator.Services"
+        x:Class="CursorTranslator.Services.SettingsWindow"
+        Icon="/Assets/translator_icon.ico"
+        Title="Cheems翻译 · 设置"
+        Width="660" Height="620" MinWidth="580" MinHeight="540"
+        WindowStartupLocation="CenterOwner" CanResize="True"
+        SystemDecorations="None" Background="Transparent" TransparencyLevelHint="Transparent"
+        Foreground="#302B27">
+  <Window.Styles>
+    <Style Selector="TextBox">
+      <Setter Property="Background" Value="#FFFEFC" />
+      <Setter Property="Foreground" Value="#302B27" />
+      <Setter Property="BorderBrush" Value="#E6DED5" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="Padding" Value="10,7" />
+      <Setter Property="MinHeight" Value="38" />
+      <Setter Property="FontSize" Value="14" />
+    </Style>
+    <Style Selector="TextBox:focus">
+      <Setter Property="BorderBrush" Value="#B65D3B" />
+    </Style>
+    <Style Selector="TextBox:disabled">
+      <Setter Property="Opacity" Value="0.55" />
+    </Style>
+    <Style Selector="CheckBox">
+      <Setter Property="Foreground" Value="#493F38" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.option-card">
+      <Setter Property="Background" Value="#FBF8F5" />
+      <Setter Property="BorderBrush" Value="#EEE5DD" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="11" />
+      <Setter Property="Padding" Value="12,10" />
+    </Style>
+  </Window.Styles>
+
+  <Border x:Name="WindowSurface" Classes="management-window-surface">
+    <Grid RowDefinitions="40,*">
+      <services:ManagementWindowTitleBar Grid.Row="0" Title="Cheems翻译 · 设置" />
+      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="24,18,24,24" Spacing="15">
+          <TextBlock Text="翻译设置" FontSize="23" FontWeight="Bold" Foreground="#302B27" />
+
+          <Border Padding="18" CornerRadius="15" Background="#FFFEFC"
+                  BorderBrush="#EAE2D9" BorderThickness="1">
+            <StackPanel Spacing="14">
+              <TextBlock Text="翻译时机" FontSize="16" FontWeight="Bold" />
+              <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="10">
+                <Border Classes="option-card">
+                  <CheckBox x:Name="TranslateOnTextChangeCheckBox" Content="文字变化"
+                            Checked="TranslationTriggerOption_Changed" Unchecked="TranslationTriggerOption_Changed" />
+                </Border>
+                <Border Grid.Column="1" Classes="option-card">
+                  <CheckBox x:Name="TranslateOnSentenceEndCheckBox" Content="句末"
+                            Checked="TranslationTriggerOption_Changed" Unchecked="TranslationTriggerOption_Changed" />
+                </Border>
+                <Border Grid.Row="1" Classes="option-card">
+                  <StackPanel Spacing="8">
+                    <CheckBox x:Name="TranslateAfterInactivityCheckBox" Content="停顿后"
+                              Checked="TranslationTriggerOption_Changed" Unchecked="TranslationTriggerOption_Changed" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="24,0,0,0">
+                      <TextBox x:Name="InactivityDelaySecondsBox" Width="74" Text="2" Watermark="2"
+                               TextAlignment="Center" ToolTip.Tip="停顿时长，0.5–60 秒。" />
+                      <TextBlock Text="秒" VerticalAlignment="Center" FontSize="13" Foreground="#655A52" />
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+                <Border Grid.Row="1" Grid.Column="1" Classes="option-card">
+                  <CheckBox x:Name="TranslateAfterCopyCheckBox" Content="复制后"
+                            Checked="TranslationTriggerOption_Changed" Unchecked="TranslationTriggerOption_Changed"
+                            ToolTip.Tip="复制纯文本后触发翻译。" />
+                </Border>
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <Border Padding="18" CornerRadius="15" Background="#FFFEFC"
+                  BorderBrush="#EAE2D9" BorderThickness="1">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16" VerticalAlignment="Center">
+              <TextBlock Text="最多翻译" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" />
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                <TextBox x:Name="MaximumTranslationCharactersBox" Width="92" Text="10" Watermark="10"
+                         MaxLength="4" TextAlignment="Center"
+                         ToolTip.Tip="范围 5–1000；中文按字、英文按词计数。" />
+                <TextBlock Text="字/词" VerticalAlignment="Center" FontSize="13" Foreground="#655A52" />
+              </StackPanel>
+            </Grid>
+          </Border>
+
+          <Border Padding="18" CornerRadius="15" Background="#FFFEFC"
+                  BorderBrush="#EAE2D9" BorderThickness="1">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16" VerticalAlignment="Center">
+              <CheckBox x:Name="OverlayFocusLossCloseDelayCheckBox" Content="浮窗延迟关闭"
+                        Checked="OverlayFocusLossCloseDelay_Changed" Unchecked="OverlayFocusLossCloseDelay_Changed"
+                        ToolTip.Tip="失去输入焦点后，等待设定时长再关闭浮窗。" />
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                <TextBox x:Name="OverlayFocusLossCloseDelaySecondsBox" Width="78" Text="5" Watermark="5"
+                         MaxLength="2" TextAlignment="Center"
+                         ToolTip.Tip="延迟关闭时长，1–60 秒。" />
+                <TextBlock Text="秒" VerticalAlignment="Center" FontSize="13" Foreground="#655A52" />
+              </StackPanel>
+            </Grid>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+  </Border>
+</Window>

@@ -8,37 +8,47 @@ public partial class PromptProfilesWindow : Window
 {
     private readonly List<PromptProfile> _translationProfiles;
     private readonly List<PromptProfile> _analysisProfiles;
+    private readonly List<PromptProfile> _selectedTranslationTermProfiles;
     private bool _loading = true;
     private int _currentKindIndex;
     private string _previousProfileId = "";
     private string _translationSelectedId = "";
     private string _analysisSelectedId = "";
+    private string _selectedTranslationTermSelectedId = "";
 
     public IReadOnlyList<PromptProfile> TranslationProfiles => _translationProfiles;
     public IReadOnlyList<PromptProfile> AnalysisProfiles => _analysisProfiles;
+    public IReadOnlyList<PromptProfile> SelectedTranslationTermProfiles => _selectedTranslationTermProfiles;
 
     private void WindowSurface_PointerPressed(object? sender, PointerPressedEventArgs e)
         => WindowChrome.BeginMoveDrag(this, e);
 
-    public PromptProfilesWindow() : this([], "", [], "") { }
+    public PromptProfilesWindow() : this([], "", [], "", [], "") { }
 
     public PromptProfilesWindow(
         IEnumerable<PromptProfile> translationProfiles,
         string activeTranslationProfileId,
         IEnumerable<PromptProfile> analysisProfiles,
-        string activeAnalysisProfileId)
+        string activeAnalysisProfileId,
+        IEnumerable<PromptProfile> selectedTranslationTermProfiles,
+        string activeSelectedTranslationTermProfileId)
     {
         InitializeComponent();
         _translationProfiles = translationProfiles.Select(profile => profile.Copy()).ToList();
         _analysisProfiles = analysisProfiles.Select(profile => profile.Copy()).ToList();
+        _selectedTranslationTermProfiles = selectedTranslationTermProfiles.Select(profile => profile.Copy()).ToList();
         if (_translationProfiles.Count == 0)
             _translationProfiles.Add(CreateDefaultProfile(0, 1));
         if (_analysisProfiles.Count == 0)
             _analysisProfiles.Add(CreateDefaultProfile(1, 1));
+        if (_selectedTranslationTermProfiles.Count == 0)
+            _selectedTranslationTermProfiles.Add(CreateDefaultProfile(2, 1));
 
         _translationSelectedId = GetExistingId(_translationProfiles, activeTranslationProfileId);
         _analysisSelectedId = GetExistingId(_analysisProfiles, activeAnalysisProfileId);
-        PromptKindComboBox.ItemsSource = new[] { "翻译提示词", "解析提示词" };
+        _selectedTranslationTermSelectedId = GetExistingId(
+            _selectedTranslationTermProfiles, activeSelectedTranslationTermProfileId);
+        PromptKindComboBox.ItemsSource = new[] { "翻译提示词", "解析提示词", "选词提示词" };
         PromptKindComboBox.SelectedIndex = 0;
         _currentKindIndex = 0;
         RefreshProfileList(_translationSelectedId);
@@ -46,20 +56,34 @@ public partial class PromptProfilesWindow : Window
         _loading = false;
     }
 
-    private List<PromptProfile> CurrentProfiles => _currentKindIndex == 0
-        ? _translationProfiles
-        : _analysisProfiles;
+    private List<PromptProfile> CurrentProfiles => _currentKindIndex switch
+    {
+        0 => _translationProfiles,
+        1 => _analysisProfiles,
+        _ => _selectedTranslationTermProfiles
+    };
 
-    private string CurrentSelectedId => _currentKindIndex == 0
-        ? _translationSelectedId
-        : _analysisSelectedId;
+    private string CurrentSelectedId => _currentKindIndex switch
+    {
+        0 => _translationSelectedId,
+        1 => _analysisSelectedId,
+        _ => _selectedTranslationTermSelectedId
+    };
 
     private void SetCurrentSelectedId(string id)
     {
-        if (_currentKindIndex == 0)
-            _translationSelectedId = id;
-        else
-            _analysisSelectedId = id;
+        switch (_currentKindIndex)
+        {
+            case 0:
+                _translationSelectedId = id;
+                break;
+            case 1:
+                _analysisSelectedId = id;
+                break;
+            default:
+                _selectedTranslationTermSelectedId = id;
+                break;
+        }
     }
 
     private static string GetExistingId(IReadOnlyList<PromptProfile> profiles, string requestedId)
@@ -67,7 +91,7 @@ public partial class PromptProfilesWindow : Window
 
     private void PromptKind_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (_loading || PromptKindComboBox.SelectedIndex is not (0 or 1)
+        if (_loading || PromptKindComboBox.SelectedIndex is not (0 or 1 or 2)
             || PromptKindComboBox.SelectedIndex == _currentKindIndex)
             return;
 
@@ -178,17 +202,24 @@ public partial class PromptProfilesWindow : Window
     }
 
     private static PromptProfile CreateDefaultProfile(int kindIndex, int number)
-        => kindIndex == 0
-            ? new PromptProfile
+        => kindIndex switch
+        {
+            0 => new PromptProfile
             {
                 Name = number == 1 ? "默认翻译提示词" : $"翻译提示词 {number}",
                 Prompt = AppSettings.DefaultSystemPrompt
-            }
-            : new PromptProfile
+            },
+            1 => new PromptProfile
             {
                 Name = number == 1 ? "默认解析提示词" : $"解析提示词 {number}",
                 Prompt = AppSettings.DefaultDeepAnalysisPrompt
-            };
+            },
+            _ => new PromptProfile
+            {
+                Name = number == 1 ? "默认选词提示词" : $"选词提示词 {number}",
+                Prompt = AppSettings.DefaultSelectedTranslationTermPrompt
+            }
+        };
 
     private void Save_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
