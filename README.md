@@ -24,3 +24,11 @@ Cheems翻译是一款 Windows 桌面翻译软件，可自动识别输入内容�
 - 🌐 自动监控输入内容，实时显示翻译结果
 - 🤖 支持 OpenAI 兼容接口，可连接本地模型
 - 🔊 支持语音播报和手动朗读译文
+
+## 本地模型配置
+
+仓库提供 Ollama 的 Hy-MT2 模型配置：[Modelfile.Hy-MT2](docs/models/Modelfile.Hy-MT2)。可在仓库根目录运行以下命令创建本地模型：
+
+```powershell
+ollama create hy-mt2-translate -f docs/models/Modelfile.Hy-MT2
+```
