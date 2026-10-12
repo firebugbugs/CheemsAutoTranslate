@@ -28,6 +28,7 @@ public partial class TranslationOverlay : Window
     private bool _hasLockedPosition;
     private PixelPoint _lockedPosition;
     private bool _dragCandidate;
+    private bool _preservePositionOnLayoutCorrection;
     private bool _isSelectingTranslationText;
     private bool _selectedTranslationTermAnalysisAvailable;
     private bool _speechAvailable;
@@ -322,8 +323,9 @@ public partial class TranslationOverlay : Window
         Position = _animationTargetPosition;
     }
 
-    private void ScheduleLayoutCorrection()
+    private void ScheduleLayoutCorrection(bool preservePosition = false)
     {
+        _preservePositionOnLayoutCorrection = preservePosition;
         _layoutCorrectionTimer.Stop();
         _layoutCorrectionTimer.Start();
     }
@@ -340,10 +342,12 @@ public partial class TranslationOverlay : Window
         TranslationScrollViewer.InvalidateMeasure();
         DeepAnalysisScrollViewer.InvalidateMeasure();
         CardBorder.InvalidateMeasure();
+        var caret = _preservePositionOnLayoutCorrection ? null : _lastCaret;
+        _preservePositionOnLayoutCorrection = false;
         Dispatcher.UIThread.Post(() =>
         {
             if (IsVisible)
-                AnimateContentLayout(_lastCaret);
+                AnimateContentLayout(caret);
         }, DispatcherPriority.Render);
     }
 
@@ -606,6 +610,20 @@ public partial class TranslationOverlay : Window
     {
         MainPageRequested?.Invoke();
         e.Handled = true;
+    }
+
+    private void ResizeEdge_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not Avalonia.Controls.Control { Tag: string direction }
+            || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            return;
+
+        StopLayoutAnimation();
+        BeginResizeDrag(direction == "Left" ? WindowEdge.West : WindowEdge.East, e);
+        e.Handled = true;
+        if (_positionLocked)
+            SaveLockedPosition();
+        ScheduleLayoutCorrection(preservePosition: true);
     }
 
     private void PositionLockToggle_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

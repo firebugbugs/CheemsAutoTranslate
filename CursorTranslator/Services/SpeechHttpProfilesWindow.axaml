@@ -70,7 +70,7 @@
                           <ComboBoxItem Content="通用 HTTP · POST JSON / WAV" Tag="GenericPost" />
                           <ComboBoxItem Content="通用 HTTP · GET 参数 / JSON 音频" Tag="GenericGet" />
                           <ComboBoxItem Content="合我意预设 · GET / MP3" Tag="Hewoyi" />
-                          <ComboBoxItem Content="Microsoft Edge TTS · 免费神经语音" Tag="EdgeTts" />
+                          <ComboBoxItem Content="Microsoft Edge TTS (已失效)" Tag="EdgeTts" />
                         </ComboBox>
                     </StackPanel>
                   </Border>

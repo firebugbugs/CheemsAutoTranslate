@@ -1,10 +1,10 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="CursorTranslator.Services.TranslationOverlay"
-        Width="560" Height="56" MinWidth="220" MaxWidth="600" MinHeight="56" MaxHeight="520"
+        Width="560" Height="56" MinWidth="220" MinHeight="56" MaxHeight="520"
         SizeToContent="Manual"
         SystemDecorations="None" ShowInTaskbar="False" ShowActivated="False"
-        Topmost="True" CanResize="False"
+        Topmost="True" CanResize="True"
         Background="Transparent"
         TransparencyLevelHint="Transparent">
   <Window.Resources>
@@ -55,6 +55,7 @@
       <Setter Property="Opacity" Value="0.42" />
     </Style>
   </Window.Styles>
+  <Grid>
   <Border x:Name="CardBorder" Background="#EF111827" CornerRadius="11" BorderBrush="#607AEE" BorderThickness="1" Padding="12,8"
           PointerPressed="Card_PointerPressed" PointerReleased="Card_PointerReleased" Cursor="SizeAll">
     <Border.ContextMenu>
@@ -195,4 +196,9 @@
       </Border>
     </StackPanel>
   </Border>
+  <Border Width="8" HorizontalAlignment="Left" Background="Transparent"
+          Cursor="SizeWestEast" Tag="Left" PointerPressed="ResizeEdge_PointerPressed" />
+  <Border Width="8" HorizontalAlignment="Right" Background="Transparent"
+          Cursor="SizeWestEast" Tag="Right" PointerPressed="ResizeEdge_PointerPressed" />
+  </Grid>
 </Window>

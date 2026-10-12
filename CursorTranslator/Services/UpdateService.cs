@@ -309,7 +309,8 @@ public sealed class UpdateService
               Write-Log 'Starting installer.'
               if (-not (Test-Path -LiteralPath $installer)) { throw 'Installer package is missing.' }
               $setup = Start-Process -FilePath $installer `
-                -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS' `
+                -ArgumentList '/NORESTART /CLOSEAPPLICATIONS' `
+                -WindowStyle Normal `
                 -WorkingDirectory ([System.IO.Path]::GetDirectoryName($installer)) -Wait -PassThru
               Write-Log "Installer exit code: $($setup.ExitCode)."
               if ($setup.ExitCode -ne 0) { throw "Installer exited with code $($setup.ExitCode)." }
