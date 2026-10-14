@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Cheems 翻译</string>
+    <string name="accessibility_service_label">Cheems 输入翻译</string>
+    <string name="accessibility_service_description">在您主动选择的应用中，读取当前可访问的输入框文字以显示翻译。不会自动发送或修改文字。</string>
+</resources>

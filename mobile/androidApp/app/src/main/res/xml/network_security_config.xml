@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- The app validates HTTP endpoints and accepts them only for loopback / private LAN hosts. -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
