@@ -158,6 +158,8 @@ public partial class MainWindow : Window
     public void CloseForExit()
     {
         _allowClose = true;
+        _autoSaveTimer.Stop();
+        SaveSettings();
         StopMonitoring();
         CancelSpeechPlayback();
         _speechSynthesis.Dispose();

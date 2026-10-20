@@ -5,7 +5,6 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
-using System.Text;
 using System.Text.Json;
 using Microsoft.Win32;
 
@@ -284,77 +283,8 @@ public sealed class UpdateService
     {
         var targetExePath = GetInstalledExecutablePath();
         fallbackExePath ??= Environment.ProcessPath ?? targetExePath;
-        var powershellPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.System),
-            "WindowsPowerShell",
-            "v1.0",
-            "powershell.exe");
-
-        var script = """
-            $ErrorActionPreference = 'Stop'
-            function Decode([string]$value) {
-              [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($value))
-            }
-            $installer = Decode '__INSTALLER_B64__'
-            $targetExe = Decode '__TARGET_EXE_B64__'
-            $fallbackExe = Decode '__FALLBACK_EXE_B64__'
-            $partial = Decode '__PARTIAL_B64__'
-            $metadata = Decode '__METADATA_B64__'
-            $log = Decode '__LOG_B64__'
-            function Write-Log([string]$message) {
-              Add-Content -LiteralPath $log -Value "$(Get-Date -Format o) $message" -Encoding UTF8
-            }
-            try {
-              try { Wait-Process -Id __PARENT_PID__ -ErrorAction SilentlyContinue } catch {}
-              Write-Log 'Starting installer.'
-              if (-not (Test-Path -LiteralPath $installer)) { throw 'Installer package is missing.' }
-              $setup = Start-Process -FilePath $installer `
-                -ArgumentList '/NORESTART /CLOSEAPPLICATIONS' `
-                -WindowStyle Normal `
-                -WorkingDirectory ([System.IO.Path]::GetDirectoryName($installer)) -Wait -PassThru
-              Write-Log "Installer exit code: $($setup.ExitCode)."
-              if ($setup.ExitCode -ne 0) { throw "Installer exited with code $($setup.ExitCode)." }
-              if (-not (Test-Path -LiteralPath $targetExe)) { throw 'Updated application executable was not found.' }
-              Start-Process -FilePath $targetExe -ArgumentList '--show-settings' `
-                -WorkingDirectory ([System.IO.Path]::GetDirectoryName($targetExe))
-              Write-Log 'Updated application restarted.'
-              foreach ($path in @($installer, $partial, $metadata)) {
-                Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
-              }
-              Write-Log 'Successful update package and download state removed.'
-            } catch {
-              Write-Log "Update failed: $($_.Exception.Message) $($_.InvocationInfo.PositionMessage)"
-              if (Test-Path -LiteralPath $fallbackExe) {
-                Start-Process -FilePath $fallbackExe -ArgumentList '--show-settings' `
-                  -WorkingDirectory ([System.IO.Path]::GetDirectoryName($fallbackExe))
-                Write-Log 'Previous application restarted as fallback.'
-              }
-            }
-            """;
-
-        var encodedScript = Convert.ToBase64String(Encoding.Unicode.GetBytes(
-            script
-                .Replace("__PARENT_PID__", parentProcessId.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)
-                .Replace("__INSTALLER_B64__", EncodeUtf8(installerPath), StringComparison.Ordinal)
-                .Replace("__TARGET_EXE_B64__", EncodeUtf8(targetExePath), StringComparison.Ordinal)
-                .Replace("__FALLBACK_EXE_B64__", EncodeUtf8(fallbackExePath), StringComparison.Ordinal)
-                .Replace("__PARTIAL_B64__", EncodeUtf8(PartialPath), StringComparison.Ordinal)
-                .Replace("__METADATA_B64__", EncodeUtf8(MetadataPath), StringComparison.Ordinal)
-                .Replace("__LOG_B64__", EncodeUtf8(InstallLogPath), StringComparison.Ordinal)));
-
-        var startInfo = new ProcessStartInfo(powershellPath)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            WindowStyle = ProcessWindowStyle.Hidden
-        };
-        startInfo.ArgumentList.Add("-NoProfile");
-        startInfo.ArgumentList.Add("-NonInteractive");
-        startInfo.ArgumentList.Add("-ExecutionPolicy");
-        startInfo.ArgumentList.Add("Bypass");
-        startInfo.ArgumentList.Add("-EncodedCommand");
-        startInfo.ArgumentList.Add(encodedScript);
-        _ = Process.Start(startInfo) ?? throw new InvalidOperationException("无法启动更新安装进程。");
+        UpdateInstallerHandoff.Start(installerPath, targetExePath, fallbackExePath, parentProcessId,
+            PartialPath, MetadataPath, InstallLogPath);
     }
 
     public static Uri ReleasesUri => new(ReleasesPage);
@@ -603,9 +533,6 @@ public sealed class UpdateService
         var metadataIndex = normalized.IndexOf('+');
         return metadataIndex >= 0 ? normalized[..metadataIndex] : normalized;
     }
-
-    private static string EncodeUtf8(string value)
-        => Convert.ToBase64String(Encoding.UTF8.GetBytes(value));
 
     private DownloadMetadata? ReadDownloadMetadata()
     {

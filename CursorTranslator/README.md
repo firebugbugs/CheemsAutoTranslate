@@ -32,6 +32,14 @@ Chromium/Electron 窗口若未暴露文本，可查看监控状态，并按对�
 
 运行 `dotnet run --project tests/InputMonitor.Regression/InputMonitor.Regression.csproj`（从仓库根目录执行）。测试在独立进程内提供真实 UIA 控件，验证文档不会进入 TextPattern 整页查询、可写输入框仍可读取，以及密码、只读、空值和超长文本处理。测试不需要翻译 API，也不会启动程序的全局监控。
 
+## 更新安装交接
+
+更新助手就绪后程序才会关闭，并先保存设置。助手最多等待 10 秒让旧进程正常退出；超时后只清理启动更新时记录且路径、PID、启动时间均匹配的本程序进程，避免残留进程让更新无限等待。同一安装目录只允许一个更新助手执行安装。安装失败时保留下载包并尝试重新打开程序。
+
+交接日志保存在 `%LocalAppData%\CursorTranslator\Updates\update-install.log`，安装器详细日志保存在同目录的 `update-setup.log`。助手只等待安装器本身退出，避免被安装器启动的新程序拖住。
+
+运行 `dotnet run --project tests/UpdateHandoff.Regression/UpdateHandoff.Regression.csproj -c Release` 验证更新交接。测试使用独立的模拟进程和安装器，在临时目录覆盖退出超时、正常退出、进程身份不匹配、安装失败回退及重复更新；不会修改本机已安装的 Cheems翻译。
+
 ## 许可证
 
 本项目采用 [MIT 许可证](../LICENSE)。

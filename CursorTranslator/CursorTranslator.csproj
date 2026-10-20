@@ -19,6 +19,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Services\UpdateInstallerHandoff.ps1" LogicalName="CursorTranslator.Services.UpdateInstallerHandoff.ps1" />
     <AvaloniaResource Include="Assets\translator_icon.ico" />
     <AvaloniaResource Include="Assets\translator_icon.png" />
     <AvaloniaResource Include="Assets\head_portrait.png" />
