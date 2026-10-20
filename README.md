@@ -13,9 +13,9 @@
 | 系统 | 最新版本 | Gitee 下载 | GitHub 下载 |
 | --- | --- | --- | --- |
 | Windows（x64） | v0.0.5 | [下载安装包（EXE）](https://gitee.com/unbengable/cheems-auto-translate/releases/download/v0.0.5/CheemsTranslator-v0.0.5-Setup.exe) | [下载安装包（EXE）](https://github.com/firebugbugs/CheemsAutoTranslate/releases/download/v0.0.5/CheemsTranslator-v0.0.5-Setup.exe) |
-| Android（9 及以上） | v0.0.4 | [下载安装包（APK）](https://gitee.com/unbengable/cheems-auto-translate/releases/download/v0.0.4/CheemsTranslator-Android-v0.0.4.apk) | [下载安装包（APK）](https://github.com/firebugbugs/CheemsAutoTranslate/releases/download/v0.0.4/CheemsTranslator-Android-v0.0.4.apk) |
+| Android（9 及以上） | 开发中 | 暂停下载 | 暂停下载 |
 
-Android 版的首次使用与权限设置见[移动端使用说明](./mobile/README.md)。
+> **安卓版目前仍存在问题，正在开发和修复中，暂不提供下载。** 开发进展及原型说明见[移动端说明](./mobile/README.md)。
 
 <div align="center">
 
@@ -23,7 +23,7 @@ Android 版的首次使用与权限设置见[移动端使用说明](./mobile/REA
 
 ![首页](./docs/images/首页.png)
 
-> 📣 **软件功能建议可以加QQ群联系群主。Windows 版支持软件内更新，Android 版请下载安装包更新。**
+> 📣 **软件功能建议可以加QQ群联系群主。Windows 版支持软件内更新，安卓版仍在开发中，暂不提供下载。**
 
 ![自动更新](./docs/images/自动更新.png)
 
@@ -31,7 +31,7 @@ Android 版的首次使用与权限设置见[移动端使用说明](./mobile/REA
 
 ## 简介
 
-Cheems翻译提供 Windows 桌面版和 Android 手机版，可自动识别输入内容并显示翻译浮层，支持 OpenAI 兼容模型和语音播报。
+Cheems翻译的 Windows 桌面版可自动识别输入内容并显示翻译浮层，支持 OpenAI 兼容模型和语音播报。Android 手机版仍在开发和修复中。
 
 - 🌐 自动监控输入内容，实时显示翻译结果
 - 🤖 支持 OpenAI 兼容接口，可连接本地模型
