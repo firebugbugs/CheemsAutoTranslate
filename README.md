@@ -12,7 +12,7 @@
 
 | 系统 | 最新版本 | Gitee 下载 | GitHub 下载 |
 | --- | --- | --- | --- |
-| Windows（x64） | v0.0.4 | [下载安装包（EXE）](https://gitee.com/unbengable/cheems-auto-translate/releases/download/v0.0.4/CheemsTranslator-v0.0.4-Setup.exe) | [下载安装包（EXE）](https://github.com/firebugbugs/CheemsAutoTranslate/releases/download/v0.0.4/CheemsTranslator-v0.0.4-Setup.exe) |
+| Windows（x64） | v0.0.5 | [下载安装包（EXE）](https://gitee.com/unbengable/cheems-auto-translate/releases/download/v0.0.5/CheemsTranslator-v0.0.5-Setup.exe) | [下载安装包（EXE）](https://github.com/firebugbugs/CheemsAutoTranslate/releases/download/v0.0.5/CheemsTranslator-v0.0.5-Setup.exe) |
 | Android（9 及以上） | v0.0.4 | [下载安装包（APK）](https://gitee.com/unbengable/cheems-auto-translate/releases/download/v0.0.4/CheemsTranslator-Android-v0.0.4.apk) | [下载安装包（APK）](https://github.com/firebugbugs/CheemsAutoTranslate/releases/download/v0.0.4/CheemsTranslator-Android-v0.0.4.apk) |
 
 Android 版的首次使用与权限设置见[移动端使用说明](./mobile/README.md)。

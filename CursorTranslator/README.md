@@ -24,7 +24,13 @@ AI 接入设置还可单独配置“深度分析指令”。默认指令会按�
 
 某些应用不向系统文本接口暴露输入内容，自动监控在这些输入框里仍不会生效。当前版只显示译文，不会把译文粘贴或写回原输入框。
 
-Chromium/Electron 窗口若未暴露文本，可查看监控状态提供的 UI Automation 节点诊断，并按对应应用说明启用无障碍支持。
+为避免 Chromium/Edge 的 UIA 文档属性查询导致浏览器卡死，监控优先直接读取焦点输入框，浏览器窗口不扫描无障碍子树，所有应用均不对整页 Document 文本查询只读属性或读取全文。Document 控件只有提供可写 ValuePattern 时才作为输入框读取；Word 兼容编辑器继续使用文档段落接口。仅提供 Document TextPattern 的编辑器可能无法自动监控，可使用“复制后翻译”。Edit 控件的只读属性只查询一个插入点，UIA 输入文本最多读取 100,000 字符，超限时跳过该次读取。密集 WinEvent 会合并处理，UIA 轮询起点至少间隔 180 毫秒。
+
+Chromium/Electron 窗口若未暴露文本，可查看监控状态，并按对应应用说明启用无障碍支持，或使用“复制后翻译”。
+
+## 输入监控回归验证
+
+运行 `dotnet run --project tests/InputMonitor.Regression/InputMonitor.Regression.csproj`（从仓库根目录执行）。测试在独立进程内提供真实 UIA 控件，验证文档不会进入 TextPattern 整页查询、可写输入框仍可读取，以及密码、只读、空值和超长文本处理。测试不需要翻译 API，也不会启动程序的全局监控。
 
 ## 许可证
 
