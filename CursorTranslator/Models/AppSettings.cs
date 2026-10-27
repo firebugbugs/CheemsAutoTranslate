@@ -105,6 +105,9 @@ public sealed class AppSettings
     public int MaximumTranslationCharacters { get; set; } = DefaultMaximumTranslationCharacters;
     public bool OverlayFocusLossCloseDelayEnabled { get; set; }
     public int OverlayFocusLossCloseDelaySeconds { get; set; } = DefaultOverlayFocusLossDelaySeconds;
+    public string TranslatorSourceLanguage { get; set; } = TranslationLanguage.AutoCode;
+    public string TranslatorTargetLanguage { get; set; } = TranslationLanguage.AutoCode;
+    public bool TranslatorAutoTranslate { get; set; } = true;
     public bool IsAiConfigured => Uri.TryCreate(Endpoint, UriKind.Absolute, out _)
         && !string.IsNullOrWhiteSpace(Model)
         && !string.IsNullOrWhiteSpace(SystemPrompt);

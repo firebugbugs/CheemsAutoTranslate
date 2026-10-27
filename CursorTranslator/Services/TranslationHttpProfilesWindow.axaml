@@ -86,6 +86,11 @@
                           <StackPanel Grid.Column="1" Spacing="4"><TextBlock Text="目标语言" FontSize="11" Foreground="#756B63" />
                             <TextBox x:Name="TargetLanguageBox" Watermark="en" /></StackPanel>
                         </Grid>
+                        <StackPanel Spacing="4">
+                          <TextBlock Text="翻译窗口语种代码映射（可选）" FontSize="11" Foreground="#756B63" />
+                          <TextBox x:Name="LanguageCodeMapBox" Watermark="zh-TW=cht, ja=jp"
+                                   ToolTip.Tip="翻译窗口按 zh、zh-TW、en、ja、ko 等标准代码传入语种；接口使用其他代码时在此对应，多个映射用逗号分隔。" />
+                        </StackPanel>
                       </StackPanel>
                     </Border>
                     <Border Grid.Column="1" Padding="12" CornerRadius="10" Background="#FFFFFF" BorderBrush="#EEE6DE" BorderThickness="1">

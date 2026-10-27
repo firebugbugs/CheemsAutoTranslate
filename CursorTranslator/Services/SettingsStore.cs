@@ -84,7 +84,11 @@ public sealed class SettingsStore
                     && overlayFocusLossCloseDelayEnabled.GetBoolean(),
                 OverlayFocusLossCloseDelaySeconds = root.TryGetProperty("overlayFocusLossCloseDelaySeconds", out var overlayFocusLossCloseDelaySeconds)
                     ? Math.Clamp(overlayFocusLossCloseDelaySeconds.GetInt32(), AppSettings.MinimumOverlayFocusLossDelaySeconds, AppSettings.MaximumOverlayFocusLossDelaySeconds)
-                    : AppSettings.DefaultOverlayFocusLossDelaySeconds
+                    : AppSettings.DefaultOverlayFocusLossDelaySeconds,
+                TranslatorSourceLanguage = ReadString(root, "translatorSourceLanguage") ?? TranslationLanguage.AutoCode,
+                TranslatorTargetLanguage = ReadString(root, "translatorTargetLanguage") ?? TranslationLanguage.AutoCode,
+                TranslatorAutoTranslate = !root.TryGetProperty("translatorAutoTranslate", out var translatorAutoTranslate)
+                    || translatorAutoTranslate.GetBoolean()
             };
             if (!settings.TranslateOnTextChange && !settings.TranslateOnSentenceEnd
                 && !settings.TranslateAfterCopy && !settings.TranslateAfterInactivity)
@@ -351,7 +355,10 @@ public sealed class SettingsStore
             ["inactivityDelaySeconds"] = settings.InactivityDelaySeconds,
             ["maximumTranslationCharacters"] = settings.MaximumTranslationCharacters,
             ["overlayFocusLossCloseDelayEnabled"] = settings.OverlayFocusLossCloseDelayEnabled,
-            ["overlayFocusLossCloseDelaySeconds"] = settings.OverlayFocusLossCloseDelaySeconds
+            ["overlayFocusLossCloseDelaySeconds"] = settings.OverlayFocusLossCloseDelaySeconds,
+            ["translatorSourceLanguage"] = settings.TranslatorSourceLanguage,
+            ["translatorTargetLanguage"] = settings.TranslatorTargetLanguage,
+            ["translatorAutoTranslate"] = settings.TranslatorAutoTranslate
         };
         if (!string.IsNullOrWhiteSpace(settings.ApiKey))
         {
@@ -589,6 +596,7 @@ public sealed class SettingsStore
             profile.Name ??= "通用 HTTP 翻译接口";
             profile.SourceLanguage ??= "auto";
             profile.TargetLanguage ??= "en";
+            profile.LanguageCodeMap ??= "";
             profile.Request ??= new SpeechHttpRequestProfile();
             profile.Request.Url ??= "";
             profile.Request.Method ??= "POST";

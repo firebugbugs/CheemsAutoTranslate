@@ -120,6 +120,7 @@ public partial class TranslationHttpProfilesWindow : Window
         TimeoutBox.Text = profile.Request.TimeoutSeconds.ToString(CultureInfo.InvariantCulture);
         SourceLanguageBox.Text = profile.SourceLanguage;
         TargetLanguageBox.Text = profile.TargetLanguage;
+        LanguageCodeMapBox.Text = profile.LanguageCodeMap;
         AuthHeaderNameBox.Text = profile.Auth.HeaderName;
         AuthQueryNameBox.Text = profile.Auth.QueryName;
         AuthUsernameBox.Text = profile.Auth.Username;
@@ -157,6 +158,7 @@ public partial class TranslationHttpProfilesWindow : Window
         current.Request.TimeoutSeconds = timeout;
         current.SourceLanguage = SourceLanguageBox.Text?.Trim() ?? "";
         current.TargetLanguage = TargetLanguageBox.Text?.Trim() ?? "";
+        current.LanguageCodeMap = LanguageCodeMapBox.Text?.Trim() ?? "";
         current.Auth.Type = SelectedTag(AuthTypeComboBox, "None");
         current.Auth.HeaderName = string.IsNullOrWhiteSpace(AuthHeaderNameBox.Text) ? "Authorization" : AuthHeaderNameBox.Text.Trim();
         current.Auth.QueryName = string.IsNullOrWhiteSpace(AuthQueryNameBox.Text) ? "api_key" : AuthQueryNameBox.Text.Trim();
@@ -203,6 +205,7 @@ public partial class TranslationHttpProfilesWindow : Window
         profile.Name ??= "";
         profile.SourceLanguage ??= "auto";
         profile.TargetLanguage ??= "en";
+        profile.LanguageCodeMap ??= "";
         profile.Request ??= new SpeechHttpRequestProfile();
         profile.Request.Url ??= "";
         profile.Request.Method ??= "POST";
@@ -227,6 +230,7 @@ public partial class TranslationHttpProfilesWindow : Window
         target.Name = source.Name;
         target.SourceLanguage = source.SourceLanguage;
         target.TargetLanguage = source.TargetLanguage;
+        target.LanguageCodeMap = source.LanguageCodeMap;
         target.Request = source.Request;
         target.Auth = source.Auth;
         target.Workflow = source.Workflow;

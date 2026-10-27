@@ -30,6 +30,9 @@ public partial class App : Avalonia.Application
             var showSettingsOnStartup = Environment.GetCommandLineArgs()
                 .Skip(1)
                 .Any(arg => string.Equals(arg, "--show-settings", StringComparison.OrdinalIgnoreCase));
+            var showTranslatorOnStartup = Environment.GetCommandLineArgs()
+                .Skip(1)
+                .Any(arg => string.Equals(arg, "--show-translator", StringComparison.OrdinalIgnoreCase));
 
             var mainWindow = new MainWindow
             {
@@ -47,8 +50,10 @@ public partial class App : Avalonia.Application
             };
 
             var menu = new Forms.ContextMenuStrip();
+            var translateItem = new Forms.ToolStripMenuItem("翻译");
             var openSettingsItem = new Forms.ToolStripMenuItem("打开设置");
             var exitItem = new Forms.ToolStripMenuItem("退出");
+            menu.Items.Add(translateItem);
             menu.Items.Add(openSettingsItem);
             menu.Items.Add(new Forms.ToolStripSeparator());
             menu.Items.Add(exitItem);
@@ -63,6 +68,7 @@ public partial class App : Avalonia.Application
                 Visible = true
             };
             _trayIcon.DoubleClick += (_, _) => Dispatcher.UIThread.Post(mainWindow.ShowSettingsWindow);
+            translateItem.Click += (_, _) => Dispatcher.UIThread.Post(mainWindow.ShowTranslatorWindow);
             openSettingsItem.Click += (_, _) => Dispatcher.UIThread.Post(mainWindow.ShowSettingsWindow);
             exitItem.Click += (_, _) => Dispatcher.UIThread.Post(() =>
             {
@@ -72,6 +78,8 @@ public partial class App : Avalonia.Application
 
             desktop.MainWindow = mainWindow;
             mainWindow.StartMonitoring();
+            if (showTranslatorOnStartup)
+                Dispatcher.UIThread.Post(mainWindow.ShowTranslatorWindow, DispatcherPriority.Background);
             desktop.Exit += (_, _) =>
             {
                 AppLog.Info("Application", "Desktop lifetime exited.");

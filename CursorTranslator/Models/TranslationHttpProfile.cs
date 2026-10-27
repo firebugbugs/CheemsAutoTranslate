@@ -9,6 +9,9 @@ public sealed class TranslationHttpProfile
     public string Name { get; set; } = "通用 HTTP 翻译接口";
     public string SourceLanguage { get; set; } = "auto";
     public string TargetLanguage { get; set; } = "en";
+    // Translator-window languages use standard codes (zh, zh-TW, ja...). Services
+    // with their own codes map them here, e.g. "zh-TW=cht, ja=jp".
+    public string LanguageCodeMap { get; set; } = "";
     public SpeechHttpRequestProfile Request { get; set; } = new();
     public SpeechHttpAuthProfile Auth { get; set; } = new();
     public SpeechHttpWorkflowProfile Workflow { get; set; } = new();
@@ -26,6 +29,7 @@ public sealed class TranslationHttpProfile
         Name = Name,
         SourceLanguage = SourceLanguage,
         TargetLanguage = TargetLanguage,
+        LanguageCodeMap = LanguageCodeMap,
         Request = Request.Copy(),
         Auth = Auth.Copy(),
         Workflow = Workflow.Copy(),
@@ -35,6 +39,22 @@ public sealed class TranslationHttpProfile
     };
 
     public override string ToString() => Name;
+
+    public string MapLanguageCode(string code)
+    {
+        foreach (var entry in (LanguageCodeMap ?? "").Split([',', '，', ';', '；', '\n'],
+                     StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separator = entry.IndexOf('=');
+            if (separator <= 0) continue;
+            if (string.Equals(entry[..separator].Trim(), code, StringComparison.OrdinalIgnoreCase))
+            {
+                var mapped = entry[(separator + 1)..].Trim();
+                if (mapped.Length > 0) return mapped;
+            }
+        }
+        return code;
+    }
 
     public static TranslationHttpProfile CreateDefault() => new()
     {
@@ -53,6 +73,7 @@ public sealed class TranslationHttpProfile
     public static TranslationHttpProfile CreateNiuTrans() => new()
     {
         Name = "小牛翻译",
+        LanguageCodeMap = "zh-TW=cht",
         Request = new SpeechHttpRequestProfile
         {
             Url = AppSettings.DefaultHttpTranslationEndpoint,

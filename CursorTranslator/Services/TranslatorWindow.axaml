@@ -1,0 +1,121 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:CursorTranslator.Services"
+        x:Class="CursorTranslator.Services.TranslatorWindow"
+        Icon="/Assets/translator_icon.ico"
+        Title="翻译" Width="1000" Height="640" MinWidth="720" MinHeight="460"
+        WindowStartupLocation="CenterScreen" CanResize="True" ShowInTaskbar="True"
+        SystemDecorations="None" Background="Transparent" TransparencyLevelHint="Transparent"
+        Foreground="#302B27">
+  <Window.Styles>
+    <StyleInclude Source="avares://CursorTranslator/Assets/HttpManagementStyles.axaml" />
+    <Style Selector="TextBox.translator-text">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="2,4" />
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="LineHeight" Value="26" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="AcceptsReturn" Value="True" />
+      <Setter Property="VerticalContentAlignment" Value="Top" />
+    </Style>
+    <!-- The panes already frame the text; hide Fluent's own focus and hover chrome. -->
+    <Style Selector="TextBox.translator-text /template/ Border#PART_BorderElement">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="TextBox.translator-text:focus /template/ Border#PART_BorderElement">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="TextBox.translator-text:pointerover /template/ Border#PART_BorderElement">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.source-pane:focus-within">
+      <Setter Property="BorderBrush" Value="#CF8D6B" />
+    </Style>
+    <Style Selector="TextBlock.pane-title">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="#684B3C" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.pane-hint">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="#93877D" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.small">
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="10,4" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+  </Window.Styles>
+
+  <Border Classes="management-window-surface" PointerPressed="WindowSurface_PointerPressed">
+    <Grid RowDefinitions="40,Auto,*,Auto">
+      <controls:ManagementWindowTitleBar Grid.Row="0" Title="翻译" />
+
+      <Grid Grid.Row="1" Margin="20,4,20,12" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="10">
+        <ComboBox x:Name="SourceLanguageComboBox" Width="170"
+                  SelectionChanged="Language_SelectionChanged" ToolTip.Tip="原文语种" />
+        <Button x:Name="SwapButton" Grid.Column="1" Classes="secondary" Content="⇄" FontSize="16"
+                Width="44" HorizontalContentAlignment="Center" Click="Swap_Click"
+                ToolTip.Tip="交换语种，并把译文作为新的原文" />
+        <ComboBox x:Name="TargetLanguageComboBox" Grid.Column="2" Width="200"
+                  SelectionChanged="Language_SelectionChanged" ToolTip.Tip="译文语种" />
+        <CheckBox x:Name="AutoTranslateCheckBox" Grid.Column="4" Content="输入停顿后自动翻译"
+                  VerticalAlignment="Center" IsCheckedChanged="AutoTranslate_Changed" />
+        <Button x:Name="TranslateButton" Grid.Column="5" Content="翻译" MinWidth="88"
+                HorizontalContentAlignment="Center" Click="Translate_Click" ToolTip.Tip="Ctrl+Enter" />
+      </Grid>
+
+      <Grid Grid.Row="2" Margin="20,0,20,12" ColumnDefinitions="*,*" ColumnSpacing="14">
+        <Border Classes="management-window-editor source-pane" Padding="14,10">
+          <Grid RowDefinitions="Auto,*,Auto" RowSpacing="6">
+            <Grid ColumnDefinitions="Auto,*">
+              <TextBlock Classes="pane-title" Text="原文" />
+              <TextBlock x:Name="SourceHintText" Grid.Column="1" Classes="pane-hint" Margin="10,0,0,0"
+                         TextTrimming="CharacterEllipsis" />
+            </Grid>
+            <TextBox x:Name="SourceTextBox" Grid.Row="1" Classes="translator-text" MaxLength="20000"
+                     Watermark="输入或粘贴要翻译的文本，Ctrl+Enter 翻译"
+                     TextChanged="SourceText_Changed" KeyDown="SourceText_KeyDown" />
+            <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
+              <TextBlock x:Name="SourceCountText" Classes="pane-hint" Text="0 / 20000" />
+              <Button Grid.Column="1" Classes="secondary small" Content="清空" Click="Clear_Click" />
+            </Grid>
+          </Grid>
+        </Border>
+
+        <Border Grid.Column="1" Classes="management-window-editor" Padding="14,10" Background="#FBF7F2">
+          <Grid RowDefinitions="Auto,*,Auto" RowSpacing="6">
+            <Grid ColumnDefinitions="Auto,*">
+              <TextBlock Classes="pane-title" Text="译文" />
+              <TextBlock x:Name="TargetHintText" Grid.Column="1" Classes="pane-hint" Margin="10,0,0,0"
+                         TextTrimming="CharacterEllipsis" />
+            </Grid>
+            <TextBox x:Name="TargetTextBox" Grid.Row="1" Classes="translator-text" IsReadOnly="True"
+                     Watermark="译文会显示在这里" />
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+              <Button x:Name="SpeakButton" Classes="secondary small" Content="朗读" Click="Speak_Click"
+                      IsEnabled="False" ToolTip.Tip="使用设置中的语音模型朗读译文" />
+              <Button x:Name="CopyButton" Classes="secondary small" Content="复制译文" Click="Copy_Click"
+                      IsEnabled="False" />
+            </StackPanel>
+          </Grid>
+        </Border>
+      </Grid>
+
+      <Grid Grid.Row="3" Margin="22,0,22,14" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+        <TextBlock x:Name="StatusText" FontSize="12" Foreground="#756B63" TextTrimming="CharacterEllipsis"
+                   VerticalAlignment="Center" />
+        <TextBlock x:Name="EngineText" Grid.Column="1" FontSize="12" Foreground="#93877D"
+                   VerticalAlignment="Center" />
+      </Grid>
+    </Grid>
+  </Border>
+</Window>

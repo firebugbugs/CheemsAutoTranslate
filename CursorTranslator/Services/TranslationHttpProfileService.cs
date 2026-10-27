@@ -11,9 +11,18 @@ public sealed class TranslationHttpProfileService
     public async Task<string> TranslateAsync(
         TranslationHttpProfile profile,
         string text,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TranslationDirection? direction = null)
     {
         ValidateProfile(profile);
+        if (direction is not null)
+        {
+            // The translator window chooses its own pair; the profile maps the
+            // standard codes to the service's codes.
+            profile = profile.Copy();
+            profile.SourceLanguage = profile.MapLanguageCode(direction.Source.Code);
+            profile.TargetLanguage = profile.MapLanguageCode(direction.Target.Code);
+        }
         var timeoutSeconds = Math.Clamp(profile.Request.TimeoutSeconds, 1, 600);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
