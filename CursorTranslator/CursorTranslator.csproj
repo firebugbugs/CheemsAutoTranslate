@@ -29,6 +29,7 @@
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.22" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <PackageReference Include="EdgeTTS.DotNet" Version="0.4.0" />
+    <PackageReference Include="Interop.UIAutomationClient" Version="10.19041.0" />
     <PackageReference Include="NAudio" Version="3.1.0" />
   </ItemGroup>
 

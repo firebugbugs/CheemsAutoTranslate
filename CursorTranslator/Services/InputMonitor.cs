@@ -12,11 +12,12 @@ namespace CursorTranslator.Services;
 /// <summary>
 /// Windows UI Automation watcher. It reads the focused control and its nearby UIA
 /// ancestors, including the native focused HWND fallback used by custom desktop apps.
+/// Focused nodes with only weak evidence of being an input (generic control types)
+/// stay under observation until typing changes their text.
 /// It never installs a keyboard hook or stores text on disk.
 /// </summary>
 public sealed class InputMonitor : IDisposable
 {
-    private const uint GcsCompStr = 0x0008;
     private const uint CfUnicodeText = 13;
     private const uint ObjIdClient = 0xFFFFFFFC;
     private const uint GaRoot = 2;
@@ -26,10 +27,14 @@ public sealed class InputMonitor : IDisposable
     private const int StateSystemFocused = 0x00000004;
     private const int StateSystemReadOnly = 0x00000040;
     private const int StateSystemProtected = 0x20000000;
-    private const string PasswordControlDiagnostic = "检测到受保护的密码输入框，已跳过";
+    internal const string PasswordControlDiagnostic = "检测到受保护的密码输入框，已跳过";
     private const int MaximumClipboardTextCharacters = 100_000;
-    private const int MaximumInputTextCharacters = 100_000;
+    internal const int MaximumInputTextCharacters = 100_000;
     private const int MinimumPollIntervalMilliseconds = 180;
+    // Text changes in a weak-evidence target count as typing only when user input
+    // arrived this recently. Covers poll latency, IME commits and autocompletion.
+    private const uint UserInputCorrelationMilliseconds = 1500;
+    private const int MaximumRejectedObservedTargets = 256;
     private Thread? _thread;
     private readonly AutoResetEvent _pollWake = new(false);
     private readonly WinEventNotifier _winEventNotifier;
@@ -47,6 +52,11 @@ public sealed class InputMonitor : IDisposable
     private string? _lastDiagnostic;
     private string? _lastLoopError;
     private uint _lastClipboardSequenceNumber;
+    private bool _observingTarget;
+    private bool _observedTargetConfirmed;
+    private readonly HashSet<string> _rejectedObservedTargets = new(StringComparer.Ordinal);
+    private Func<uint> _tickCount = () => unchecked((uint)Environment.TickCount);
+    private Func<uint> _lastUserInputTick = GetLastUserInputTick;
     private static readonly TimeSpan UnreadableTargetGrace = TimeSpan.FromMilliseconds(600);
     private TriggerConfiguration _triggerConfiguration = new(
         false,
@@ -287,7 +297,8 @@ public sealed class InputMonitor : IDisposable
 
         var nativeFocusHandle = GetNativeFocusHandle();
         var isChromium = IsChromiumWindow(foregroundWindow, nativeFocusHandle, out var chromiumProcess);
-        if (HasActiveImeComposition(nativeFocusHandle))
+        var uia3Focus = WeakFocusedInputSource.GetFocusedElement();
+        if (WeakFocusedInputSource.HasActiveComposition(uia3Focus))
         {
             ReportDiagnostic("检测到输入法正在组合文字，等候选字上屏后再翻译。");
             return;
@@ -361,6 +372,24 @@ public sealed class InputMonitor : IDisposable
             return;
         }
 
+        if (uia3Focus is not null && foregroundWindow != IntPtr.Zero)
+        {
+            GetWindowThreadProcessId(foregroundWindow, out var foregroundProcessId);
+            var caretBounds = WeakFocusedInputSource.GetCaretBounds(foregroundWindow, nativeFocusHandle);
+            if (WeakFocusedInputSource.TryReadFocusedInput(uia3Focus, (int)foregroundProcessId, caretBounds,
+                    out value, out id, out bounds, out var weakDescription))
+            {
+                ProcessReadResult(value, id, bounds, weakDescription, foregroundRoot, triggers,
+                    requiresObservation: true);
+                return;
+            }
+            if (weakDescription == PasswordControlDiagnostic)
+            {
+                HandleUnreadableTarget(weakDescription);
+                return;
+            }
+        }
+
         var diagnostic = string.IsNullOrWhiteSpace(nativeDescription) ? uiAutomationDescription : nativeDescription;
         if (isChromium)
         {
@@ -374,7 +403,7 @@ public sealed class InputMonitor : IDisposable
     }
 
     private void ProcessReadResult(string value, string id, PixelRect bounds, string description,
-        IntPtr foregroundRoot, TriggerConfiguration triggers)
+        IntPtr foregroundRoot, TriggerConfiguration triggers, bool requiresObservation = false)
     {
         if (string.IsNullOrEmpty(id))
         {
@@ -382,8 +411,29 @@ public sealed class InputMonitor : IDisposable
             return;
         }
 
+        if (requiresObservation && _rejectedObservedTargets.Contains(id))
+        {
+            HandleUnreadableTarget($"{description} 的文本会在没有输入时自行变化，已判定为非输入框。");
+            return;
+        }
+
         Interlocked.Exchange(ref _overlayInteractionActive, 0);
         _unreadableSinceUtc = null;
+
+        if (id != _elementId && requiresObservation)
+        {
+            // A generic node with an editable pattern and a caret may still be a
+            // read-only view or a self-updating control. Do not translate existing
+            // text; wait until a change follows user input.
+            LostTarget();
+            _elementId = id;
+            _targetRootWindow = foregroundRoot;
+            _baseline = value;
+            _lastChangeUtc = DateTime.UtcNow;
+            _observingTarget = true;
+            ReportDiagnostic($"观察中：{description}（输入文字后确认）");
+            return;
+        }
 
         if (id != _elementId)
         {
@@ -411,6 +461,22 @@ public sealed class InputMonitor : IDisposable
 
         var previousValue = _baseline;
         var changed = !previousValue.Equals(value, StringComparison.Ordinal);
+        if (_observingTarget)
+        {
+            if (changed && !IsUserDrivenChange())
+            {
+                RejectObservedTarget(id, description);
+                return;
+            }
+            if (!_observedTargetConfirmed)
+            {
+                if (!changed) return;
+                _observedTargetConfirmed = true;
+                TargetFound?.Invoke();
+                ReportDiagnostic($"已连接：{description}（已由输入确认）");
+            }
+        }
+
         if (changed)
         {
             _baseline = value;
@@ -448,6 +514,32 @@ public sealed class InputMonitor : IDisposable
         {
             Commit(value, bounds, foregroundRoot);
         }
+    }
+
+    private bool IsUserDrivenChange()
+    {
+        // Read the input tick first so input arriving in between cannot wrap the difference.
+        var lastInput = _lastUserInputTick();
+        var now = _tickCount();
+        return unchecked(now - lastInput) <= UserInputCorrelationMilliseconds;
+    }
+
+    private void RejectObservedTarget(string id, string description)
+    {
+        if (_rejectedObservedTargets.Count >= MaximumRejectedObservedTargets)
+            _rejectedObservedTargets.Clear();
+        _rejectedObservedTargets.Add(id);
+        ReportDiagnostic($"{description} 的文本在没有输入时发生变化，已判定为非输入框。");
+        LostTarget();
+    }
+
+    private static uint GetLastUserInputTick()
+    {
+        var info = new LastInputInfo { Size = (uint)Marshal.SizeOf<LastInputInfo>() };
+        // Without a timestamp no change can be attributed to the user.
+        return GetLastInputInfo(ref info)
+            ? info.Time
+            : unchecked((uint)Environment.TickCount - UserInputCorrelationMilliseconds - 1);
     }
 
     private static bool IsChromiumWindow(IntPtr foregroundWindow, IntPtr nativeFocusHandle, out string processName)
@@ -1016,22 +1108,6 @@ public sealed class InputMonitor : IDisposable
         return info.Focus;
     }
 
-    private static bool HasActiveImeComposition(IntPtr focus)
-    {
-        if (focus == IntPtr.Zero) return false;
-        var context = ImmGetContext(focus);
-        if (context == IntPtr.Zero) return false;
-        try
-        {
-            // The result is a byte count; reading the actual pre-edit string is unnecessary.
-            return ImmGetCompositionString(context, GcsCompStr, IntPtr.Zero, 0) > 0;
-        }
-        finally
-        {
-            ImmReleaseContext(focus, context);
-        }
-    }
-
     private static bool IsSameElement(AutomationElement first, AutomationElement second)
     {
         try
@@ -1110,7 +1186,7 @@ public sealed class InputMonitor : IDisposable
         public int Bottom;
     }
 
-    private static bool IsPlaceholderText(string value, string? name, string? helpText)
+    internal static bool IsPlaceholderText(string value, string? name, string? helpText)
     {
         var candidate = value.Trim();
         return candidate.Length > 0
@@ -1174,6 +1250,8 @@ public sealed class InputMonitor : IDisposable
         _baseline = "";
         _hasPendingText = false;
         _unreadableSinceUtc = null;
+        _observingTarget = false;
+        _observedTargetConfirmed = false;
     }
 
     private sealed record TriggerConfiguration(
@@ -1188,6 +1266,13 @@ public sealed class InputMonitor : IDisposable
     {
         public int X;
         public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LastInputInfo
+    {
+        public uint Size;
+        public uint Time;
     }
 
     public void Dispose()
@@ -1219,7 +1304,5 @@ public sealed class InputMonitor : IDisposable
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GlobalUnlock(IntPtr memory);
     [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint message, IntPtr wParam, StringBuilder lParam, uint flags, uint timeout, out IntPtr result);
-    [DllImport("imm32.dll", SetLastError = true)] private static extern IntPtr ImmGetContext(IntPtr hWnd);
-    [DllImport("imm32.dll", EntryPoint = "ImmGetCompositionStringW", SetLastError = true)] private static extern int ImmGetCompositionString(IntPtr context, uint index, IntPtr buffer, uint bufferLength);
-    [DllImport("imm32.dll", SetLastError = true)] private static extern bool ImmReleaseContext(IntPtr hWnd, IntPtr context);
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool GetLastInputInfo(ref LastInputInfo info);
 }
